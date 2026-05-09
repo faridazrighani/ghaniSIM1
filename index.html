@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern HYSYS Simulator UI</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c4568'/%3E%3Cpath d='M8 22h16M10 16h12M12 10h8' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+    <script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+
+    <!-- Top Menu Bar -->
+    <div class="menu-bar">
+        <div class="menu-dropdown" id="file-dropdown-container">
+            <span class="menu-item" id="menu-file">File</span>
+            <div class="dropdown-content" id="dropdown-file">
+                <button type="button" id="menu-new">New</button>
+                <button type="button" id="menu-open">Open...</button>
+                <button type="button" id="menu-save">Save</button>
+                <button type="button" id="menu-save-as">Save As...</button>
+                <button type="button" id="menu-clear-file" class="dropdown-danger">Clear Canvas</button>
+                <button type="button" id="menu-close" class="dropdown-separated">Close</button>
+            </div>
+        </div>
+        <div class="menu-dropdown" id="edit-dropdown-container">
+            <span class="menu-item" id="menu-edit">Edit</span>
+            <div class="dropdown-content" id="dropdown-edit">
+                <button type="button" id="menu-undo">Undo</button>
+                <button type="button" id="menu-redo">Redo</button>
+                <button type="button" id="menu-clear" class="dropdown-danger">Clear Canvas</button>
+            </div>
+        </div>
+        <div class="menu-dropdown" id="process-dropdown-container">
+            <span class="menu-item" id="menu-process">Process</span>
+            <div class="dropdown-content" id="dropdown-process">
+                <button type="button" id="menu-fluid-basis">Fluid Basis</button>
+            </div>
+        </div>
+        <span class="menu-item">Simulate</span>
+        <span class="menu-item">Tools</span>
+        <span class="menu-item">View</span>
+        <div class="menu-dropdown" id="help-dropdown-container">
+            <span class="menu-item" id="menu-help">Help</span>
+            <div class="dropdown-content" id="dropdown-help">
+                <button type="button" id="menu-about">About</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ribbon Toolbar -->
+    <div class="ribbon">
+        <button class="ribbon-btn active" id="btn-mode-select" hidden aria-hidden="true">
+            <div class="ribbon-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1c4568" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>
+            </div>
+            <span class="ribbon-label">Select</span>
+        </button>
+        <button class="ribbon-btn" id="btn-mode-connect" hidden aria-hidden="true">
+            <div class="ribbon-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </div>
+            <span class="ribbon-label">Connect</span>
+        </button>
+        
+        <div class="ribbon-divider" hidden aria-hidden="true"></div>
+
+        <button class="ribbon-btn" id="btn-fluid-basis" title="Open Fluid Basis">
+            <div class="ribbon-icon">
+                <svg width="22" height="24" viewBox="0 0 40 50" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="fluidBasisGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#4a90e2;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#003366;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <path d="M 20 5 C 20 5, 5 25, 5 35 C 5 45, 15 45, 20 45 C 25 45, 35 45, 35 35 C 35 25, 20 5, 20 5 Z" fill="url(#fluidBasisGrad)" stroke="#001f3f" stroke-width="1.5"/>
+                </svg>
+            </div>
+            <span class="ribbon-label">Fluid Basis</span>
+        </button>
+
+        <div class="ribbon-divider"></div>
+        
+        <div class="toolbar-palette" id="toolbarPalette"></div>
+
+        <div class="ribbon-divider"></div>
+        
+        <button class="ribbon-btn" style="border: 1px solid #c3e6cb; background-color: #d4edda;">
+            <div class="ribbon-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <span class="ribbon-label">Solve</span>
+        </button>
+    </div>
+
+    <!-- Main Workspace -->
+    <div class="main-workspace">
+        
+        <!-- Canvas -->
+        <div class="pfd-canvas" id="canvas">
+            
+            <!-- Connection Lines (SVG) -->
+            <svg class="pfd-lines" id="svg-lines">
+            </svg>
+
+            <div class="canvas-status-legend" aria-label="Pump status legend">
+                <div class="canvas-overlay-title">Pump Status</div>
+                <div class="canvas-legend-row"><span class="status-dot status-safe"></span><span>Safe</span></div>
+                <div class="canvas-legend-row"><span class="status-dot status-warning"></span><span>Warning</span></div>
+                <div class="canvas-legend-row"><span class="status-dot status-risk"></span><span>NPSH Risk</span></div>
+                <div class="canvas-legend-row"><span class="status-dot status-incomplete"></span><span>Incomplete</span></div>
+            </div>
+
+            <section class="canvas-warning-panel" id="canvasWarningPanel" aria-label="Equipment warnings" aria-live="polite">
+                <div class="canvas-warning-header">
+                    <span>Warnings</span>
+                    <span class="canvas-warning-count" id="canvasWarningCount">0</span>
+                </div>
+                <div class="canvas-warning-list" id="canvasWarningList">
+                    <div class="canvas-warning-empty">No active warnings</div>
+                </div>
+            </section>
+
+            <!-- 1. Feed Tank TK-100 -->
+            <div class="pfd-object equipment object-type-tank" id="obj-tk100" data-id="TK-100" style="left: 100px; top: 270px;">
+                <div class="object-icon">
+                    <img class="pfd-icon-img" src="toolbar/icons/tank.svg" alt="">
+                    <!-- Port Outlet -->
+                    <div class="port outlet" style="top: 50%; right: 6%; transform: translate(50%, -50%);"></div>
+                </div>
+                <div class="object-name">TK-100<br><span class="object-desc">Feed Tank</span></div>
+            </div>
+
+            <!-- 3. Pump P-100 -->
+            <div class="pfd-object equipment" id="obj-p100" data-id="P-100" style="left: 380px; top: 285px;">
+                <div class="object-icon">
+                    <svg width="60" height="40" viewBox="0 0 60 40">
+                        <!-- Left Flange -->
+                        <rect x="5" y="10" width="10" height="10" fill="#fff" stroke="#333" stroke-width="1.5"/>
+                        <!-- Right Flange -->
+                        <rect x="45" y="10" width="10" height="10" fill="#fff" stroke="#333" stroke-width="1.5"/>
+                        <!-- Casing -->
+                        <circle cx="30" cy="15" r="14" fill="#d0d0d0" stroke="#333" stroke-width="1.5"/>
+                        <!-- Inner Impeller center -->
+                        <circle cx="30" cy="15" r="5" fill="#888" stroke="#333"/>
+                        <!-- Base -->
+                        <rect x="20" y="29" width="20" height="5" fill="#aaa" stroke="#333"/>
+                    </svg>
+                    <!-- Port Inlet -->
+                    <div class="port inlet" style="top: 10px; left: 0;"></div>
+                    <!-- Port Outlet -->
+                    <div class="port outlet" style="top: 10px; right: 0;"></div>
+                </div>
+                <div class="object-name">P-100<br><span class="object-desc">Centrifugal Pump</span></div>
+            </div>
+
+            <!-- 4. Product Tank TK-101 -->
+            <div class="pfd-object equipment object-type-tank" id="obj-tk101" data-id="TK-101" style="left: 680px; top: 270px;">
+                <div class="object-icon">
+                    <img class="pfd-icon-img" src="toolbar/icons/tank.svg" alt="">
+                    <!-- Port Inlet -->
+                    <div class="port inlet" style="top: 50%; left: 6%; transform: translate(-50%, -50%);"></div>
+                </div>
+                <div class="object-name">TK-101<br><span class="object-desc">Product Tank</span></div>
+            </div>
+            
+        </div>
+
+        <!-- Right Sidebar (Object Properties) -->
+        <div class="properties-sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-title">Object Properties</span>
+                <span class="pin-badge">Pinned</span>
+            </div>
+            
+            <div class="sidebar-content" id="sidebarContent">
+                <!-- Dynamic Content goes here -->
+                
+                <table class="prop-table" id="propTable">
+                    <thead>
+                        <tr>
+                            <th colspan="2" id="propTableHeader">Select an Object</th>
+                        </tr>
+                    </thead>
+                    <tbody id="propTableBody">
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+                                Click on an equipment or stream on the canvas to view its properties here.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="sidebar-footer-note" id="editorHint" style="display: none;">
+                    Double-click object to open full editor
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Pump Sidebar (Operating Summary) -->
+        <aside class="pump-properties-sidebar" id="pumpPropertiesSidebar" hidden>
+            <div class="sidebar-header">
+                <span class="sidebar-title">Pump Properties</span>
+                <span class="pin-badge">Pump</span>
+            </div>
+
+            <div class="sidebar-content">
+                <table class="prop-table" id="pumpPropertiesTable">
+                    <thead>
+                        <tr>
+                            <th colspan="2" id="pumpPropertiesHeader">Select a Pump</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pumpPropertiesBody">
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+                                Select a pump to view operating results and system residuals.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- Hidden Modal for Full Chart/Editor -->
+    <div class="full-editor-modal" id="fullEditor">
+        <div class="modal-header" id="editorHeader">
+            <span id="editorTitle">Pump Performance Curve</span>
+            <button class="modal-close" id="closeEditor" type="button" aria-label="Close pump performance curve">X</button>
+        </div>
+        <div class="modal-body">
+            <div style="flex: 1; position: relative;">
+                <canvas id="pumpChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Dialog -->
+    <div class="about-modal" id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+        <div class="about-window">
+            <div class="about-header">
+                <span id="aboutTitle">About</span>
+                <button class="modal-close" id="closeAbout" type="button" aria-label="Close about dialog">X</button>
+            </div>
+            <div class="about-body">
+                <div class="about-logo-row">
+                    <img class="about-logo" src="png/untirta-75.webp" alt="Universitas Sultan Ageng Tirtayasa logo">
+                    <img class="about-logo" src="png/teknik-mesin-untirta75.png" alt="Mechanical Engineering UNTIRTA logo">
+                </div>
+
+                <div class="about-thesis-label">Bachelor&rsquo;s Thesis:</div>
+                <h2 class="about-thesis-title">
+                    Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on Net Positive Suction Head (NPSH) Analysis for Various Fluids
+                </h2>
+
+                <div class="about-institution">
+                    <strong>Universitas Sultan Ageng Tirtayasa</strong>
+                    <span>Mechanical Engineering - UNTIRTA</span>
+                </div>
+
+                <div class="about-copyright">&copy; 2026 Farid Azrighani. All rights reserved.</div>
+                <a class="about-link" href="https://untirta.ac.id/" target="_blank" rel="noopener noreferrer">https://untirta.ac.id/</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="formulas/constants.js"></script>
+    <script src="properties/objects/tank-properties.js"></script>
+    <script src="properties/objects/pipe-properties.js"></script>
+    <script src="properties/objects/pump-properties.js"></script>
+    <script src="properties/objects/valve-properties.js"></script>
+    <script src="properties/objects/separator-properties.js"></script>
+    <script src="properties/objects/heat-exchanger-properties.js"></script>
+    <script src="properties/objects/mixer-properties.js"></script>
+    <script src="properties/objects/instrument-properties.js"></script>
+    <script src="properties/objects/network-node-properties.js"></script>
+    <script src="properties/object-properties.js"></script>
+    <script src="formulas/fluids/common-fluid-formulas.js"></script>
+    <script src="formulas/fluids/water-formulas.js"></script>
+    <script src="formulas/fluids/methanol-formulas.js"></script>
+    <script src="formulas/fluids/palm-oil-formulas.js"></script>
+    <script src="formulas/fluids/crude-oil-formulas.js"></script>
+    <script src="formulas/objects/pump-formulas.js"></script>
+    <script src="formulas/objects/pipe-formulas.js"></script>
+    <script src="formulas/objects/tank-formulas.js"></script>
+    <script src="formulas/objects/valve-formulas.js"></script>
+    <script src="formulas/objects/check-valve-formulas.js"></script>
+    <script src="formulas/objects/separator-formulas.js"></script>
+    <script src="formulas/objects/heat-exchanger-formulas.js"></script>
+    <script src="formulas/objects/mixer-formulas.js"></script>
+    <script src="formulas/objects/hydraulic-network-formulas.js"></script>
+    <script src="formulas/objects/instrument-formulas.js"></script>
+    <script src="formulas/objects/network-node-formulas.js"></script>
+    <script src="toolbar/toolbar-catalog.js"></script>
+    <script src="core/default-state.js"></script>
+    <script src="toolbar/menu-bar.js"></script>
+    <script src="core/state-manager.js"></script>
+    <script src="core/simulation-engine.js"></script>
+    <script src="ui/sidebar-properties.js"></script>
+    <script src="ui/connections-renderer.js"></script>
+    <script src="ui/context-menu.js"></script>
+    <script src="ui/canvas-manager.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
