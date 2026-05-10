@@ -11,7 +11,7 @@
     
     /* Text Colors */
     --text-main: #333333;
-    --text-muted: #666666;
+    --text-muted: #888888;
     
     /* Connection Line */
     --pipe-color: #1a4971;
@@ -322,7 +322,7 @@ textarea {
     align-items: center;
     justify-content: center;
 }
-.ribbon-label { font-size: 12px; color: #333; }
+.ribbon-label { font-size: 11px; color: #333; }
 
 .ribbon-divider {
     width: 1px;
@@ -356,8 +356,8 @@ textarea {
 }
 
 .toolbar-group-title {
-    color: #555555;
-    font-size: 12px;
+    color: #66788a;
+    font-size: 10px;
     font-weight: 700;
     text-align: center;
     line-height: 1;
@@ -383,7 +383,7 @@ textarea {
     color: #333;
     cursor: pointer;
     font-family: inherit;
-    font-size: 12px;
+    font-size: 10px;
 }
 
 .toolbar-tool-draggable {
@@ -433,7 +433,7 @@ textarea {
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
     color: #1f2937;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.1;
     pointer-events: none;
@@ -523,7 +523,7 @@ textarea {
 .canvas-overlay-title {
     margin-bottom: 5px;
     color: #334155;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
 }
@@ -534,7 +534,7 @@ textarea {
     gap: 7px;
     min-height: 18px;
     color: #334155;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.2;
 }
 
@@ -570,7 +570,7 @@ textarea {
     padding: 8px 10px;
     border-bottom: 1px solid rgba(226, 232, 240, 0.9);
     color: #334155;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
 }
@@ -582,7 +582,7 @@ textarea {
     background: #e2e8f0;
     color: #475569;
     text-align: center;
-    font-size: 12px;
+    font-size: 10px;
 }
 
 .canvas-warning-panel.has-warnings .canvas-warning-count {
@@ -598,7 +598,7 @@ textarea {
 .canvas-warning-empty {
     padding: 9px 10px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
 }
 
@@ -633,7 +633,7 @@ textarea {
 
 .canvas-warning-item-title {
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.2;
     white-space: nowrap;
@@ -642,7 +642,7 @@ textarea {
 .canvas-warning-item-detail {
     margin-top: 3px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.25;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -746,7 +746,7 @@ textarea {
     background: #ffffff;
     box-shadow: 0 2px 5px rgba(15, 23, 42, 0.12);
     color: #334155;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 700;
     line-height: 1.15;
     white-space: nowrap;
@@ -968,7 +968,7 @@ textarea {
 }
 
 .object-name {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     color: #111;
     margin-top: -1px;
@@ -976,7 +976,7 @@ textarea {
     line-height: 1.05;
 }
 .object-desc {
-    font-size: 12px;
+    font-size: 10px;
     font-weight: normal;
     color: #444;
     display: none;
@@ -1035,7 +1035,7 @@ textarea {
 .pin-badge {
     background-color: #e4e9f0;
     color: #555;
-    font-size: 12px;
+    font-size: 11px;
     padding: 2px 10px;
     border-radius: 12px;
     font-weight: 600;
@@ -1060,7 +1060,6 @@ textarea {
     overflow: hidden;
 }
 
-.prop-table caption,
 .prop-table th {
     background-color: var(--header-blue);
     color: white;
@@ -1252,7 +1251,7 @@ textarea {
 .pump-loss-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 11px;
     table-layout: fixed;
 }
 
@@ -1305,7 +1304,7 @@ textarea {
     border-bottom: 1px solid #edf2f7;
     background: #eef6fc;
     color: #123b5a;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.2;
 }
 
@@ -1332,7 +1331,7 @@ textarea {
 .pump-trace-metric span {
     display: block;
     color: #64748b;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.15;
     margin-bottom: 3px;
 }
@@ -1340,7 +1339,7 @@ textarea {
 .pump-trace-metric strong {
     display: block;
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
     word-break: break-word;
 }
@@ -1361,7 +1360,7 @@ textarea {
 
 .pump-trace-step-title {
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.25;
 }
@@ -1369,7 +1368,7 @@ textarea {
 .pump-trace-reference {
     margin-top: 2px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.25;
 }
 
@@ -1402,7 +1401,7 @@ textarea {
     border-radius: 4px;
     background: #e0f2fe;
     color: #075985;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
 }
 
@@ -1440,7 +1439,7 @@ textarea {
     background: #f8fafc;
     padding: 9px 10px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
 }
 
@@ -1463,7 +1462,7 @@ textarea {
     border-bottom: 1px solid #edf2f7;
     background: #eef6fc;
     color: #123b5a;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.2;
 }
 
@@ -1490,7 +1489,7 @@ textarea {
 .fluid-trace-metric span {
     display: block;
     color: #64748b;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.15;
     margin-bottom: 3px;
 }
@@ -1498,7 +1497,7 @@ textarea {
 .fluid-trace-metric strong {
     display: block;
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
     word-break: break-word;
 }
@@ -1550,7 +1549,7 @@ textarea {
 
 .fluid-trace-step-title {
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     line-height: 1.25;
 }
@@ -1558,7 +1557,7 @@ textarea {
 .fluid-trace-reference {
     margin-top: 2px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.25;
 }
 
@@ -1591,7 +1590,7 @@ textarea {
     border-radius: 4px;
     background: #e0f2fe;
     color: #075985;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
 }
 
@@ -1633,7 +1632,7 @@ textarea {
     background: #f8fafc;
     padding: 9px 10px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
 }
 .prop-input-field {
@@ -1660,7 +1659,7 @@ select.prop-input-field {
 
 .sidebar-footer-note {
     text-align: center;
-    font-size: 12px;
+    font-size: 11px;
     font-style: italic;
     color: var(--text-muted);
     margin-top: 20px;
@@ -1899,7 +1898,7 @@ select.prop-input-field {
 .fluid-field-unit {
     flex: 0 0 auto;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.2;
 }
 
@@ -1910,7 +1909,7 @@ select.prop-input-field {
     padding: 10px 12px;
     border-top: 1px solid #edf2f7;
     background: #f8fafc;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
 }
 
@@ -1973,7 +1972,7 @@ select.prop-input-field {
     border-radius: 6px;
     background: #fff7ed;
     color: #9a3412;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
 }
 
@@ -2038,7 +2037,7 @@ select.prop-input-field {
 .fluid-equation-reference {
     margin-top: 3px;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.25;
 }
 
@@ -2050,7 +2049,7 @@ select.prop-input-field {
     background: #f1f5f9;
     color: #123b5a;
     font-family: Consolas, 'Courier New', monospace;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
     white-space: normal;
     word-break: break-word;
@@ -2059,7 +2058,7 @@ select.prop-input-field {
 .fluid-equation-substitution {
     margin-top: 6px;
     color: #334155;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.35;
     word-break: break-word;
 }
@@ -2135,7 +2134,7 @@ select.prop-input-field {
     min-width: 860px;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 .fluid-table th,
@@ -2205,7 +2204,7 @@ select.prop-input-field {
 .boundary-result-card span {
     display: block;
     color: #52606d;
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1.2;
 }
 .pipe-result-card strong,
@@ -2233,7 +2232,7 @@ select.prop-input-field {
     width: 100%;
     min-width: 820px;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: 11px;
     margin-top: 5px;
     table-layout: fixed;
 }
@@ -2255,7 +2254,7 @@ select.prop-input-field {
     padding: 2px 4px;
     border: 1px solid #ccc;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 11px;
     font-family: inherit;
     background-color: #fff;
 }
@@ -2303,7 +2302,7 @@ select.prop-input-field {
     border: 1px solid #b3d4f5;
     padding: 4px 8px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
@@ -2316,7 +2315,7 @@ select.prop-input-field {
     border: 1px solid #f5c6cb;
     padding: 2px 6px;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 10px;
     cursor: pointer;
 }
 .btn-remove-segment:hover {
@@ -2330,7 +2329,7 @@ select.prop-input-field {
     border: 1px solid #ffda6a;
     padding: 6px 8px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
 }
@@ -2540,12 +2539,11 @@ select.prop-input-field {
     }
 
     .prop-table {
-        font-size: 12px;
+        font-size: 11px;
     }
 
     .prop-table td,
-    .prop-table caption,
-.prop-table th {
+    .prop-table th {
         padding: 7px 8px;
     }
 
@@ -2563,7 +2561,7 @@ select.prop-input-field {
     }
 
     .object-name {
-        font-size: 12px;
+        font-size: 10px;
     }
 
     .object-desc {
