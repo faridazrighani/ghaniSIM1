@@ -822,12 +822,17 @@ function makeDraggable(obj) {
     
     // Double click for Pump chart
     if (obj.dataset.id.startsWith('P-')) {
-        obj.addEventListener('dblclick', () => {
+        obj.addEventListener('dblclick', async () => {
             if (appMode !== 'CONNECT') {
                 activeChartPumpId = obj.dataset.id;
                 document.getElementById('fullEditor').style.display = 'flex';
                 selectNode(obj.dataset.id, obj);
                 updateSimulation();
+
+                if (typeof ensurePumpChartReady === 'function') {
+                    await ensurePumpChartReady();
+                }
+
                 updatePumpChart(activeChartPumpId);
                 if (pumpChartInstance) pumpChartInstance.resize();
             }

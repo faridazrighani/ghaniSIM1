@@ -6,7 +6,6 @@
     <title>Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on NPSH Analysis for Various Fluids</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c4568'/%3E%3Cpath d='M8 22h16M10 16h12M12 10h8' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="style.css">
-    <script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -142,14 +141,10 @@
                 <!-- Dynamic Content goes here -->
                 
                 <table class="prop-table" id="propTable">
-                    <thead>
-                        <tr>
-                            <th colspan="2" id="propTableHeader">Select an Object</th>
-                        </tr>
-                    </thead>
+                    <caption id="propTableHeader">Select an Object</caption>
                     <tbody id="propTableBody">
                         <tr>
-                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+                            <td colspan="2" style="text-align: center; color: #666; padding: 20px;">
                                 Click on an equipment or stream on the canvas to view its properties here.
                             </td>
                         </tr>
@@ -172,14 +167,10 @@
 
             <div class="sidebar-content">
                 <table class="prop-table" id="pumpPropertiesTable">
-                    <thead>
-                        <tr>
-                            <th colspan="2" id="pumpPropertiesHeader">Select a Pump</th>
-                        </tr>
-                    </thead>
+                    <caption id="pumpPropertiesHeader">Select a Pump</caption>
                     <tbody id="pumpPropertiesBody">
                         <tr>
-                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+                            <td colspan="2" style="text-align: center; color: #666; padding: 20px;">
                                 Select a pump to view operating results and system residuals.
                             </td>
                         </tr>
@@ -223,8 +214,8 @@
             </div>
             <div class="about-body">
                 <div class="about-logo-row">
-                    <img class="about-logo" src="png/untirta-75.webp" alt="Universitas Sultan Ageng Tirtayasa logo">
-                    <img class="about-logo" src="png/teknik-mesin-untirta75.png" alt="Mechanical Engineering UNTIRTA logo">
+                    <img class="about-logo" src="png/untirta-75.webp" alt="Universitas Sultan Ageng Tirtayasa logo" loading="lazy" decoding="async" width="75" height="75">
+                    <img class="about-logo" src="png/teknik-mesin-untirta75.webp" alt="Mechanical Engineering UNTIRTA logo" loading="lazy" decoding="async" width="75" height="75">
                 </div>
 
                 <div class="about-thesis-label">Bachelor&rsquo;s Thesis:</div>
@@ -244,32 +235,6 @@
     </div>
 
     <script src="formulas/constants.js"></script>
-    <script src="properties/objects/tank-properties.js"></script>
-    <script src="properties/objects/pipe-properties.js"></script>
-    <script src="properties/objects/pump-properties.js"></script>
-    <script src="properties/objects/valve-properties.js"></script>
-    <script src="properties/objects/separator-properties.js"></script>
-    <script src="properties/objects/heat-exchanger-properties.js"></script>
-    <script src="properties/objects/mixer-properties.js"></script>
-    <script src="properties/objects/instrument-properties.js"></script>
-    <script src="properties/objects/network-node-properties.js"></script>
-    <script src="properties/object-properties.js"></script>
-    <script src="formulas/fluids/common-fluid-formulas.js"></script>
-    <script src="formulas/fluids/water-formulas.js"></script>
-    <script src="formulas/fluids/methanol-formulas.js"></script>
-    <script src="formulas/fluids/palm-oil-formulas.js"></script>
-    <script src="formulas/fluids/crude-oil-formulas.js"></script>
-    <script src="formulas/objects/pump-formulas.js"></script>
-    <script src="formulas/objects/pipe-formulas.js"></script>
-    <script src="formulas/objects/tank-formulas.js"></script>
-    <script src="formulas/objects/valve-formulas.js"></script>
-    <script src="formulas/objects/check-valve-formulas.js"></script>
-    <script src="formulas/objects/separator-formulas.js"></script>
-    <script src="formulas/objects/heat-exchanger-formulas.js"></script>
-    <script src="formulas/objects/mixer-formulas.js"></script>
-    <script src="formulas/objects/hydraulic-network-formulas.js"></script>
-    <script src="formulas/objects/instrument-formulas.js"></script>
-    <script src="formulas/objects/network-node-formulas.js"></script>
     <script src="toolbar/toolbar-catalog.js"></script>
     <script src="core/default-state.js"></script>
     <script src="toolbar/menu-bar.js"></script>

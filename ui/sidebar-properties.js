@@ -87,7 +87,7 @@ function clearSelection() {
     document.getElementById('propTableHeader').textContent = 'Select an Object';
     document.getElementById('propTableBody').innerHTML = `
         <tr>
-            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+            <td colspan="2" style="text-align: center; color: #666; padding: 20px;">
                 Click on an equipment or stream on the canvas to view its properties here.
             </td>
         </tr>
@@ -747,7 +747,7 @@ function renderPumpPropertiesSidebar(nodeId) {
         header.textContent = 'Select a Pump';
         tbody.innerHTML = `
             <tr>
-                <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
+                <td colspan="2" style="text-align: center; color: #666; padding: 20px;">
                     Select a pump to view operating results and system residuals.
                 </td>
             </tr>
@@ -1663,9 +1663,38 @@ function renderSidebar(nodeId) {
     }
 }
 
-// Modal Chart Init
+// Modal Chart Init (lazy-loaded to keep the initial PageSpeed path light)
+let pumpChartLibraryPromise = null;
+
+function loadChartLibrary() {
+    if (window.Chart) return Promise.resolve(window.Chart);
+    if (pumpChartLibraryPromise) return pumpChartLibraryPromise;
+
+    pumpChartLibraryPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'vendor/chart.umd.min.js';
+        script.defer = true;
+        script.onload = () => resolve(window.Chart);
+        script.onerror = () => reject(new Error('Failed to load Chart.js'));
+        document.head.appendChild(script);
+    });
+
+    return pumpChartLibraryPromise;
+}
+
+async function ensurePumpChartReady() {
+    if (pumpChartInstance) return pumpChartInstance;
+    await loadChartLibrary();
+    return initializeChart();
+}
+
 function initializeChart() {
-    const ctx = document.getElementById('pumpChart').getContext('2d');
+    if (pumpChartInstance) return pumpChartInstance;
+
+    const chartCanvas = document.getElementById('pumpChart');
+    if (!chartCanvas || !window.Chart) return null;
+
+    const ctx = chartCanvas.getContext('2d');
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
     
     pumpChartInstance = new Chart(ctx, {
@@ -1685,6 +1714,8 @@ function initializeChart() {
             }
         }
     });
+
+    return pumpChartInstance;
 }
 
 // Modal Drag

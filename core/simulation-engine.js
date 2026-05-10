@@ -663,13 +663,28 @@ function updateSimulation(options = {}) {
         globalModel[tankId].props.vaporPressure = fluid.props.vaporPressure;
     });
 
-    resetHydraulicPipeResults(globalModel);
+    const hydraulicToolsReady = (
+        typeof resetHydraulicPipeResults === 'function'
+        && typeof createPumpHydraulicContext === 'function'
+        && typeof calculatePumpSystemHead === 'function'
+        && typeof calculatePumpHydraulicSnapshot === 'function'
+    );
+
+    if (hydraulicToolsReady) {
+        resetHydraulicPipeResults(globalModel);
+    }
     
     const pumps = Object.keys(globalModel).filter(k => globalModel[k].type === 'pump');
     
     pumps.forEach(pumpId => {
         const pump = globalModel[pumpId];
         ensureNodeResults(pump);
+
+        if (!hydraulicToolsReady) {
+            resetPumpCalculatedResults(pump, 'Loading solver', ['Hydraulic solver is still loading. Results will update automatically.']);
+            refreshPumpUiReadouts(pumpId, pump);
+            return;
+        }
 
         const hydraulicContext = createPumpHydraulicContext(pumpId, globalModel, connections, density, vaporPressure);
         

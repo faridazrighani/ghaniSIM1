@@ -2,11 +2,77 @@
  * Modern Process Simulator - Main Entry Point (Bootstrap)
  */
 
+
+const DEFERRED_ENGINEERING_SCRIPTS = [
+    'properties/objects/tank-properties.js',
+    'properties/objects/pipe-properties.js',
+    'properties/objects/pump-properties.js',
+    'properties/objects/valve-properties.js',
+    'properties/objects/separator-properties.js',
+    'properties/objects/heat-exchanger-properties.js',
+    'properties/objects/mixer-properties.js',
+    'properties/objects/instrument-properties.js',
+    'properties/objects/network-node-properties.js',
+    'properties/object-properties.js',
+    'formulas/fluids/common-fluid-formulas.js',
+    'formulas/fluids/water-formulas.js',
+    'formulas/fluids/methanol-formulas.js',
+    'formulas/fluids/palm-oil-formulas.js',
+    'formulas/fluids/crude-oil-formulas.js',
+    'formulas/objects/pump-formulas.js',
+    'formulas/objects/pipe-formulas.js',
+    'formulas/objects/tank-formulas.js',
+    'formulas/objects/valve-formulas.js',
+    'formulas/objects/check-valve-formulas.js',
+    'formulas/objects/separator-formulas.js',
+    'formulas/objects/heat-exchanger-formulas.js',
+    'formulas/objects/mixer-formulas.js',
+    'formulas/objects/hydraulic-network-formulas.js',
+    'formulas/objects/instrument-formulas.js',
+    'formulas/objects/network-node-formulas.js'
+];
+
+function loadDeferredScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.body.appendChild(script);
+    });
+}
+
+async function loadDeferredEngineeringScripts() {
+    for (const src of DEFERRED_ENGINEERING_SCRIPTS) {
+        await loadDeferredScript(src);
+    }
+
+    if (globalModel.FLUID?.props?.fluidName === 'Water' && typeof updateWaterProperties === 'function') {
+        updateWaterProperties();
+    }
+
+    updateSimulation({ renderSidebarAfter: currentSelectedNode !== null });
+    drawConnections();
+}
+
+function scheduleDeferredEngineeringScripts() {
+    window.setTimeout(() => {
+        window.engineeringScriptsReady = loadDeferredEngineeringScripts().catch(console.error);
+        window.hydraulicNetworkReady = window.engineeringScriptsReady;
+    }, 3500);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Initialize core components
     initMenuBar();
     if (typeof initTaskWindow === 'function') initTaskWindow();
-    initializeChart(); // Pump performance chart modal
+    // Chart.js is lazy-loaded only when the pump chart modal is opened.
 
     const canvas = document.getElementById('canvas');
     if (canvas) {
@@ -81,8 +147,14 @@ document.addEventListener('DOMContentLoaded', () => {
         window.clearTimeout(resizeTimer);
         resizeTimer = window.setTimeout(() => {
             drawConnections();
-            if (activeChartPumpId) updatePumpChart(activeChartPumpId);
-            if (pumpChartInstance) pumpChartInstance.resize();
+            if (activeChartPumpId && typeof ensurePumpChartReady === 'function') {
+                ensurePumpChartReady().then(() => {
+                    updatePumpChart(activeChartPumpId);
+                    if (pumpChartInstance) pumpChartInstance.resize();
+                }).catch(console.error);
+            } else if (pumpChartInstance) {
+                pumpChartInstance.resize();
+            }
         }, 80);
     };
     window.addEventListener('resize', handleViewportChange);
@@ -118,9 +190,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    scheduleDeferredEngineeringScripts();
+
     // 7. Initial Data Kickstart
     // Auto calculate initial water properties
-    if (globalModel["FLUID"] && globalModel["FLUID"].props.fluidName === 'Water') {
+    if (globalModel["FLUID"] && globalModel["FLUID"].props.fluidName === 'Water' && typeof updateWaterProperties === 'function') {
         updateWaterProperties();
     }
     
@@ -128,8 +202,5 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         updateSimulation();
         drawConnections();
-        if (typeof openAboutDialog === 'function') {
-            openAboutDialog();
-        }
     }, 100);
 });
