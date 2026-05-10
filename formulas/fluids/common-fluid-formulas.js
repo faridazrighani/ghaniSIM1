@@ -104,21 +104,196 @@ function getFluidTraceTemperatureRange(fluidName) {
     return null;
 }
 
+function getFluidAuditProfile(fluidName, inputMode) {
+    const derivedReference = 'Derived formula audit: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf; pressure/head and NPSHA audit: pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf';
+    const nistReference = 'NIST Chemistry WebBook SRD 69 fluid data, checked at 298.15 K and 0.101325 MPa';
+
+    if (fluidName === 'Water') {
+        return {
+            primaryReference: `${nistReference}; IAPWS water formulations referenced by NIST`,
+            primaryStatus: 'Verified',
+            vaporReference: `${nistReference}; vapor pressure relation cross-checked with HI Appendix A water vapor pressure equation`,
+            vaporStatus: 'Verified',
+            thermalReference: nistReference,
+            thermalStatus: 'Verified',
+            bulkReference: 'Derived from density and speed of sound; NIST Chemistry WebBook SRD 69 speed of sound checked at 298.15 K',
+            bulkStatus: 'Formula verified',
+            derivedReference
+        };
+    }
+
+    if (fluidName === 'Methanol') {
+        return {
+            primaryReference: `${nistReference}; local methanol table matches NIST liquid values at 298.15 K`,
+            primaryStatus: 'Verified',
+            vaporReference: 'Antoine vapor pressure correlation; NIST saturation trend checked around 298.15 K',
+            vaporStatus: 'Reference-based estimate',
+            thermalReference: nistReference,
+            thermalStatus: 'Verified',
+            bulkReference: 'Derived from NIST liquid density and speed of sound table values',
+            bulkStatus: 'Formula verified',
+            derivedReference
+        };
+    }
+
+    if (fluidName === 'Palm Oil') {
+        return {
+            primaryReference: 'No palm oil source document was found in pdf_ref; table values remain application engineering data',
+            primaryStatus: 'Needs verification',
+            vaporReference: 'Default low vapor pressure estimate; no palm oil vapor pressure reference found in pdf_ref',
+            vaporStatus: 'Needs verification',
+            thermalReference: 'No palm oil source document was found in pdf_ref',
+            thermalStatus: 'Needs verification',
+            bulkReference: 'Default bulk modulus estimate; no palm oil bulk modulus reference found in pdf_ref',
+            bulkStatus: 'Needs verification',
+            derivedReference
+        };
+    }
+
+    if (fluidName === 'Crude Oil') {
+        return {
+            primaryReference: 'API MPMS 11.1 / ASTM D341 method labels are used in code, but the standards were not present in pdf_ref',
+            primaryStatus: 'Needs verification',
+            vaporReference: 'RVP-based empirical estimate; source standard not present in pdf_ref',
+            vaporStatus: 'Engineering estimate',
+            thermalReference: 'Empirical crude oil estimate; source standard not present in pdf_ref',
+            thermalStatus: 'Engineering estimate',
+            bulkReference: 'Derived from empirical speed of sound estimate and density',
+            bulkStatus: 'Engineering estimate',
+            derivedReference
+        };
+    }
+
+    const customStatus = inputMode === 'Advanced' ? 'User input' : 'User input / basic basis';
+    return {
+        primaryReference: 'User-entered fluid property; verify against lab data, vendor data, NIST, or literature for final cases',
+        primaryStatus: 'Needs verification',
+        vaporReference: 'User-entered vapor pressure; verify absolute pressure basis before NPSH use',
+        vaporStatus: 'Needs verification',
+        thermalReference: customStatus,
+        thermalStatus: 'Needs verification',
+        bulkReference: 'User-entered bulk modulus if supplied',
+        bulkStatus: 'Needs verification',
+        derivedReference
+    };
+}
+
 function addFluidTraceWarning(warnings, condition, message) {
     if (condition) warnings.push(message);
 }
 
-function buildFluidPropertySourceMap(props, sourceProfile, values) {
+function buildFluidPropertySourceMap(props, sourceProfile, values, auditProfile) {
     return [
-        { property: 'Density', value: values.density, unit: 'kg/m3', source: sourceProfile.density },
-        { property: 'Dynamic viscosity', value: values.dynamicViscosity, unit: 'cP', source: sourceProfile.dynamicViscosity },
-        { property: 'Kinematic viscosity', value: values.kinematicViscosity, unit: 'cSt', source: sourceProfile.kinematicViscosity },
-        { property: 'Vapor pressure', value: values.vaporPressure, unit: 'bar a', source: sourceProfile.vaporPressure },
-        { property: 'Specific gravity', value: values.specificGravity, unit: '', source: 'Derived from density' },
-        { property: 'Specific volume', value: values.specificVolume, unit: 'm3/kg', source: 'Derived from density' },
-        { property: 'Specific weight', value: values.specificWeight, unit: 'N/m3', source: 'Derived from density and gravity' },
-        { property: 'Vapor pressure head', value: values.vaporPressureHead, unit: 'm', source: 'Derived for NPSH screening' },
-        { property: 'Speed of sound', value: values.speedOfSound, unit: 'm/s', source: props?.bulkModulus ? 'Derived from bulk modulus and density' : sourceProfile.thermal }
+        {
+            property: 'Density',
+            value: values.density,
+            unit: 'kg/m3',
+            source: sourceProfile.density,
+            method: sourceProfile.density,
+            formula: 'Primary input or fluid correlation',
+            reference: auditProfile.primaryReference,
+            status: auditProfile.primaryStatus
+        },
+        {
+            property: 'Dynamic viscosity',
+            value: values.dynamicViscosity,
+            unit: 'cP',
+            source: sourceProfile.dynamicViscosity,
+            method: sourceProfile.dynamicViscosity,
+            formula: 'Primary input, fluid correlation, or mu = nu x rho / 1000',
+            reference: auditProfile.primaryReference,
+            status: auditProfile.primaryStatus
+        },
+        {
+            property: 'Kinematic viscosity',
+            value: values.kinematicViscosity,
+            unit: 'cSt',
+            source: sourceProfile.kinematicViscosity,
+            method: sourceProfile.kinematicViscosity,
+            formula: 'nu(cSt) = mu(cP) / (rho / 1000)',
+            reference: auditProfile.derivedReference,
+            status: 'Formula verified'
+        },
+        {
+            property: 'Vapor pressure',
+            value: values.vaporPressure,
+            unit: 'bar a',
+            source: sourceProfile.vaporPressure,
+            method: sourceProfile.vaporPressure,
+            formula: 'Absolute saturation or estimated vapor pressure at fluid temperature',
+            reference: auditProfile.vaporReference,
+            status: auditProfile.vaporStatus
+        },
+        {
+            property: 'Specific gravity',
+            value: values.specificGravity,
+            unit: '-',
+            source: 'Derived from density',
+            method: 'rho / rho_ref',
+            formula: `SG = rho / ${FLUID_TRACE_WATER_REF_DENSITY} kg/m3`,
+            reference: auditProfile.derivedReference,
+            status: 'Formula verified'
+        },
+        {
+            property: 'Specific volume',
+            value: values.specificVolume,
+            unit: 'm3/kg',
+            source: 'Derived from density',
+            method: '1 / rho',
+            formula: 'v = 1 / rho',
+            reference: auditProfile.derivedReference,
+            status: 'Formula verified'
+        },
+        {
+            property: 'Specific weight',
+            value: values.specificWeight,
+            unit: 'N/m3',
+            source: 'Derived from density and gravity',
+            method: 'rho x g',
+            formula: `gamma = rho x ${formatFluidTraceNumber(getFluidTraceGravity())} m/s2`,
+            reference: auditProfile.derivedReference,
+            status: 'Formula verified'
+        },
+        {
+            property: 'Vapor pressure head',
+            value: values.vaporPressureHead,
+            unit: 'm',
+            source: 'Derived for NPSH screening',
+            method: 'Pv / (rho x g)',
+            formula: 'Hv = Pv(bar a) x 100000 / (rho x g)',
+            reference: auditProfile.derivedReference,
+            status: 'Formula verified'
+        },
+        {
+            property: 'Specific heat',
+            value: values.specificHeat,
+            unit: 'kJ/kg.K',
+            source: sourceProfile.thermal,
+            method: sourceProfile.thermal,
+            formula: 'Primary input, table, or fluid correlation',
+            reference: auditProfile.thermalReference,
+            status: auditProfile.thermalStatus
+        },
+        {
+            property: 'Bulk modulus',
+            value: values.bulkModulus,
+            unit: 'GPa',
+            source: props?.bulkModulus ? 'Fluid correlation, estimate, or user input' : sourceProfile.thermal,
+            method: 'K = rho x a^2 where speed of sound is available',
+            formula: 'K(GPa) = rho x a^2 / 1e9',
+            reference: auditProfile.bulkReference,
+            status: auditProfile.bulkStatus
+        },
+        {
+            property: 'Speed of sound',
+            value: values.speedOfSound,
+            unit: 'm/s',
+            source: props?.bulkModulus ? 'Derived from bulk modulus and density' : sourceProfile.thermal,
+            method: 'sqrt(K / rho)',
+            formula: 'a = sqrt(K(Pa) / rho)',
+            reference: auditProfile.bulkReference,
+            status: auditProfile.bulkStatus === 'Needs verification' ? 'Needs verification' : 'Formula verified'
+        }
     ];
 }
 
@@ -131,10 +306,12 @@ function buildFluidCalculationTrace(fluidNode) {
     const dynamicViscosity = toFluidTraceNumber(props.dynViscosity, NaN);
     const kinematicViscosity = toFluidTraceNumber(props.viscosity, NaN);
     const vaporPressureBarA = toFluidTraceNumber(props.vaporPressure, NaN);
+    const specificHeat = toFluidTraceNumber(props.specificHeat, NaN);
     const bulkModulusGpa = toFluidTraceNumber(props.bulkModulus, NaN);
     const gravity = getFluidTraceGravity();
     const densityRef = FLUID_TRACE_WATER_REF_DENSITY;
     const sourceProfile = getFluidTraceSourceProfile(fluidName, inputMode);
+    const auditProfile = getFluidAuditProfile(fluidName, inputMode);
     const method = getFluidTraceMethod(fluidName, props);
     const specificGravity = Number.isFinite(density) ? density / densityRef : NaN;
     const kinematicFromDynamic = Number.isFinite(dynamicViscosity) && Number.isFinite(density) && density > 0
@@ -176,6 +353,8 @@ function buildFluidCalculationTrace(fluidNode) {
         specificVolume: roundFluidTraceNumber(specificVolume, 9),
         specificWeight: roundFluidTraceNumber(specificWeight, 3),
         vaporPressureHead: roundFluidTraceNumber(vaporPressureHead, 3),
+        specificHeat: roundFluidTraceNumber(specificHeat, 3),
+        bulkModulus: roundFluidTraceNumber(bulkModulusGpa, 6),
         speedOfSound: roundFluidTraceNumber(speedOfSound, 3)
     };
 
@@ -187,7 +366,7 @@ function buildFluidCalculationTrace(fluidNode) {
             substitution: `${formatFluidTraceNumber(density)} / ${formatFluidTraceNumber(densityRef)} = ${formatFluidTraceNumber(specificGravity, 6)}`,
             result: values.specificGravity,
             unit: '',
-            reference: 'Derived from SI density relationship'
+            reference: `Formula verified: SG = rho / rho_ref, rho_ref = ${formatFluidTraceNumber(densityRef, 3)} kg/m3`
         },
         {
             title: 'Kinematic Viscosity',
@@ -198,7 +377,7 @@ function buildFluidCalculationTrace(fluidNode) {
                 : `Reported value = ${formatFluidTraceNumber(kinematicViscosity, 6)} cSt`,
             result: roundFluidTraceNumber(Number.isFinite(kinematicFromDynamic) ? kinematicFromDynamic : kinematicViscosity, 6),
             unit: 'cSt',
-            reference: 'Dynamic-to-kinematic viscosity conversion'
+            reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines kinematic viscosity as mu / rho'
         },
         {
             title: 'Specific Weight',
@@ -207,7 +386,7 @@ function buildFluidCalculationTrace(fluidNode) {
             substitution: `${formatFluidTraceNumber(density)} x ${formatFluidTraceNumber(gravity)} = ${formatFluidTraceNumber(specificWeight)} N/m3`,
             result: values.specificWeight,
             unit: 'N/m3',
-            reference: 'Specific weight definition'
+            reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines gamma = rho x g; app uses g = 9.81 m/s2'
         },
         {
             title: 'Specific Volume',
@@ -216,7 +395,7 @@ function buildFluidCalculationTrace(fluidNode) {
             substitution: `1 / ${formatFluidTraceNumber(density)} = ${formatFluidTraceNumber(specificVolume, 9)} m3/kg`,
             result: values.specificVolume,
             unit: 'm3/kg',
-            reference: 'Specific volume definition'
+            reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines specific volume as 1 / rho'
         },
         {
             title: 'Vapor Pressure Head',
@@ -225,7 +404,7 @@ function buildFluidCalculationTrace(fluidNode) {
             substitution: `${formatFluidTraceNumber(vaporPressureBarA, 6)} x 100000 / (${formatFluidTraceNumber(density)} x ${formatFluidTraceNumber(gravity)}) = ${formatFluidTraceNumber(vaporPressureHead)} m`,
             result: values.vaporPressureHead,
             unit: 'm',
-            reference: 'NPSH available vapor pressure term'
+            reference: 'Formula verified: pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf Appendix A pressure-head conversion'
         },
         {
             title: 'Speed of Sound',
@@ -236,7 +415,7 @@ function buildFluidCalculationTrace(fluidNode) {
                 : `Reported value = ${formatFluidTraceNumber(speedOfSound)} m/s`,
             result: values.speedOfSound,
             unit: 'm/s',
-            reference: 'Bulk modulus relation'
+            reference: auditProfile.bulkReference
         }
     ];
 
@@ -248,7 +427,7 @@ function buildFluidCalculationTrace(fluidNode) {
             temperature: roundFluidTraceNumber(tempC, 3),
             propertyMethod: method
         },
-        propertySourceMap: buildFluidPropertySourceMap(props, sourceProfile, values),
+        propertySourceMap: buildFluidPropertySourceMap(props, sourceProfile, values, auditProfile),
         dependencyChain: [
             'Temperature -> density, viscosity, vapor pressure for automatic fluids',
             'Density -> specific gravity, specific volume, specific weight',
@@ -258,26 +437,32 @@ function buildFluidCalculationTrace(fluidNode) {
         ],
         steps,
         npshRelevance: [
-            'Density converts pressure into pressure head and affects Reynolds number.',
-            'Vapor pressure is subtracted in NPSHa through Hv = Pv / (rho x g).',
+            'Density is used in pressure-to-head conversion and affects Reynolds number in suction-line calculations.',
+            'Specific weight is derived as gamma = rho x g and is the denominator in pressure/head conversion.',
+            'Vapor pressure is converted to vapor pressure head and subtracts from NPSHa; higher vapor pressure reduces NPSH margin.',
             'Viscosity affects Reynolds number, friction factor, pipe loss, and therefore suction losses.',
-            'Bulk fluid temperature is the basis for the current property set.'
+            'Temperature drives automatic density, viscosity, and vapor pressure correlations for supported fluids.',
+            'Bulk modulus and speed of sound are not primary steady-state NPSH terms, but remain useful compressibility/transient references.'
         ],
         references: [
             method,
-            'Derived from SI unit relationships',
-            'Bernoulli/NPSH pressure-head conversion',
-            'Darcy-Weisbach Reynolds/friction dependency through viscosity'
+            auditProfile.primaryReference,
+            auditProfile.derivedReference,
+            'pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf: density, specific volume, viscosity, specific weight, vapor pressure, cavitation context',
+            'pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf: NPSHA definition and pressure-head conversion'
         ],
         assumptions: [
             'Fluid properties are evaluated at the selected bulk fluid temperature.',
             'Hydraulic calculations treat the liquid as single-phase and incompressible for screening.',
-            'Vapor pressure is used for NPSH screening; detailed flashing/two-phase behavior is not modeled.'
+            'Vapor pressure is treated as absolute pressure in bar a before conversion to Pa.',
+            `The application uses g = ${formatFluidTraceNumber(gravity)} m/s2 for hydraulic head conversions.`
         ],
         academicNotes: [
             sourceProfile.note,
-            'For thesis validation, compare final fluid properties with literature, lab, or manufacturer data where available.'
+            `${fluidName} source status: ${auditProfile.primaryStatus}. ${auditProfile.primaryReference}`,
+            'Engineering note: final thesis cases should be validated against lab, vendor, NIST, or literature data whenever the status is not Verified or Formula verified.'
         ],
+        auditProfile,
         warnings
     };
 }

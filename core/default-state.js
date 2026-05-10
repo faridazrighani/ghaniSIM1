@@ -7,16 +7,16 @@ window.DEFAULT_SIMULATION_STATE = {
                 inputMode: 'Basic',
                 fluidName: 'Water',
                 temp: 25,
-                density: 996.7294738665296,
-                sg: 0.9967573830732557,
-                viscosity: 0.8933607412655798,
-                dynViscosity: 0.8904389816146543,
-                vaporPressure: 0.03168531412275435,
-                specificHeat: 4.18,
-                bulkModulus: 2.2,
-                specVolume: 0.0010032812575721107,
-                specWeight: 9777.916138630655,
-                speedOfSound: 1485.6711502410765
+                density: 997.0470133997646,
+                sg: 0.9970749314978467,
+                viscosity: 0.8926327060988247,
+                dynViscosity: 0.889996773678783,
+                vaporPressure: 0.03169824486313973,
+                specificHeat: 4.181446178557689,
+                bulkModulus: 2.233493550571319,
+                specVolume: 0.001002961732556789,
+                specWeight: 9781.031201451691,
+                speedOfSound: 1496.6992220000063
             }
         }
     },

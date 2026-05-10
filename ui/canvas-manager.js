@@ -530,6 +530,14 @@ function renderToolbarPalette() {
     });
 }
 function selectNode(nodeId, element) {
+    if (nodeId === 'FLUID' && typeof openFluidBasisTaskWindow === 'function') {
+        document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
+        currentSelectedNode = null;
+        renderPumpPropertiesSidebar(null);
+        openFluidBasisTaskWindow();
+        return;
+    }
+
     // Clear previous selection
     document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
     // Set new selection

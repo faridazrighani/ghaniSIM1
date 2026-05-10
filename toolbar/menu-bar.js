@@ -178,6 +178,7 @@ function clearSimulationCanvas() {
             speedOfSound: 1482
         } 
     };
+    if (typeof updateWaterProperties === 'function') updateWaterProperties();
     connections.splice(0, connections.length);
     instrumentLinks.splice(0, instrumentLinks.length);
     sourceLinks.splice(0, sourceLinks.length);
@@ -247,7 +248,11 @@ function openFluidBasis() {
     globalModel.FLUID.name = 'Fluid Basis';
     if (typeof setAppMode === 'function') setAppMode('SELECT');
     if (typeof hideContextMenu === 'function') hideContextMenu();
-    selectNode('FLUID', null);
+    if (typeof openFluidBasisTaskWindow === 'function') {
+        openFluidBasisTaskWindow();
+    } else {
+        selectNode('FLUID', null);
+    }
 }
 
 function openAboutDialog() {
@@ -463,6 +468,46 @@ function initMenuBar() {
                 e.preventDefault();
                 helpDropdown.classList.remove('show');
                 openAboutDialog();
+            });
+        }
+
+        const menuFluidProperties = document.getElementById('menu-fluid-properties');
+        const fluidPropertiesSubmenu = menuFluidProperties?.closest('.dropdown-submenu');
+        if (menuFluidProperties && fluidPropertiesSubmenu) {
+            menuFluidProperties.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fluidPropertiesSubmenu.classList.toggle('show-submenu');
+                menuFluidProperties.setAttribute(
+                    'aria-expanded',
+                    fluidPropertiesSubmenu.classList.contains('show-submenu') ? 'true' : 'false'
+                );
+            });
+        }
+
+        const menuNpshNotes = document.getElementById('menu-npsh-notes');
+        if (menuNpshNotes) {
+            menuNpshNotes.addEventListener('click', (e) => {
+                e.preventDefault();
+                helpDropdown.classList.remove('show');
+                fluidPropertiesSubmenu?.classList.remove('show-submenu');
+                if (menuFluidProperties) menuFluidProperties.setAttribute('aria-expanded', 'false');
+                if (typeof openFluidPropertiesHelp === 'function') {
+                    openFluidPropertiesHelp('npsh');
+                }
+            });
+        }
+
+        const menuPropertySourceMap = document.getElementById('menu-property-source-map');
+        if (menuPropertySourceMap) {
+            menuPropertySourceMap.addEventListener('click', (e) => {
+                e.preventDefault();
+                helpDropdown.classList.remove('show');
+                fluidPropertiesSubmenu?.classList.remove('show-submenu');
+                if (menuFluidProperties) menuFluidProperties.setAttribute('aria-expanded', 'false');
+                if (typeof openFluidPropertiesHelp === 'function') {
+                    openFluidPropertiesHelp('source-map');
+                }
             });
         }
     }

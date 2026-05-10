@@ -5,7 +5,15 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Initialize core components
     initMenuBar();
+    if (typeof initTaskWindow === 'function') initTaskWindow();
     initializeChart(); // Pump performance chart modal
+
+    const canvas = document.getElementById('canvas');
+    if (canvas) {
+        canvas.querySelectorAll('.pfd-object').forEach(el => el.remove());
+        const svgLines = document.getElementById('svg-lines');
+        if (svgLines) svgLines.innerHTML = '';
+    }
     
     // 2. Setup Palette UI
     renderToolbarPalette();
@@ -34,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 5. Canvas Event Listeners
-    const canvas = document.getElementById('canvas');
     if (canvas) {
         canvas.addEventListener('click', (e) => {
             hideContextMenu();
@@ -121,11 +128,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         updateSimulation();
         drawConnections();
-        // Auto select Fluid Basis at start to show case-basis properties
-        if (globalModel['FLUID']) {
-            globalModel.FLUID.name = 'Fluid Basis';
-            openFluidBasis();
-        }
         if (typeof openAboutDialog === 'function') {
             openAboutDialog();
         }

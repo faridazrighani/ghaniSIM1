@@ -43,6 +43,13 @@
         <div class="menu-dropdown" id="help-dropdown-container">
             <span class="menu-item" id="menu-help">Help</span>
             <div class="dropdown-content" id="dropdown-help">
+                <div class="dropdown-submenu">
+                    <button type="button" id="menu-fluid-properties" class="dropdown-submenu-trigger" aria-haspopup="true" aria-expanded="false">Fluid Properties</button>
+                    <div class="dropdown-submenu-content" id="dropdown-fluid-properties">
+                        <button type="button" id="menu-npsh-notes">NPSH Relevance &amp; Academic Notes</button>
+                        <button type="button" id="menu-property-source-map">Property Source Map</button>
+                    </div>
+                </div>
                 <button type="button" id="menu-about">About</button>
             </div>
         </div>
@@ -122,49 +129,6 @@
                 </div>
             </section>
 
-            <!-- 1. Feed Tank TK-100 -->
-            <div class="pfd-object equipment object-type-tank" id="obj-tk100" data-id="TK-100" style="left: 100px; top: 270px;">
-                <div class="object-icon">
-                    <img class="pfd-icon-img" src="toolbar/icons/tank.svg" alt="">
-                    <!-- Port Outlet -->
-                    <div class="port outlet" style="top: 50%; right: 6%; transform: translate(50%, -50%);"></div>
-                </div>
-                <div class="object-name">TK-100<br><span class="object-desc">Feed Tank</span></div>
-            </div>
-
-            <!-- 3. Pump P-100 -->
-            <div class="pfd-object equipment" id="obj-p100" data-id="P-100" style="left: 380px; top: 285px;">
-                <div class="object-icon">
-                    <svg width="60" height="40" viewBox="0 0 60 40">
-                        <!-- Left Flange -->
-                        <rect x="5" y="10" width="10" height="10" fill="#fff" stroke="#333" stroke-width="1.5"/>
-                        <!-- Right Flange -->
-                        <rect x="45" y="10" width="10" height="10" fill="#fff" stroke="#333" stroke-width="1.5"/>
-                        <!-- Casing -->
-                        <circle cx="30" cy="15" r="14" fill="#d0d0d0" stroke="#333" stroke-width="1.5"/>
-                        <!-- Inner Impeller center -->
-                        <circle cx="30" cy="15" r="5" fill="#888" stroke="#333"/>
-                        <!-- Base -->
-                        <rect x="20" y="29" width="20" height="5" fill="#aaa" stroke="#333"/>
-                    </svg>
-                    <!-- Port Inlet -->
-                    <div class="port inlet" style="top: 10px; left: 0;"></div>
-                    <!-- Port Outlet -->
-                    <div class="port outlet" style="top: 10px; right: 0;"></div>
-                </div>
-                <div class="object-name">P-100<br><span class="object-desc">Centrifugal Pump</span></div>
-            </div>
-
-            <!-- 4. Product Tank TK-101 -->
-            <div class="pfd-object equipment object-type-tank" id="obj-tk101" data-id="TK-101" style="left: 680px; top: 270px;">
-                <div class="object-icon">
-                    <img class="pfd-icon-img" src="toolbar/icons/tank.svg" alt="">
-                    <!-- Port Inlet -->
-                    <div class="port inlet" style="top: 50%; left: 6%; transform: translate(-50%, -50%);"></div>
-                </div>
-                <div class="object-name">TK-101<br><span class="object-desc">Product Tank</span></div>
-            </div>
-            
         </div>
 
         <!-- Right Sidebar (Object Properties) -->
@@ -239,6 +203,17 @@
         </div>
     </div>
 
+    <!-- Reusable Nonblocking Task Window -->
+    <section class="task-window" id="taskWindow" hidden role="dialog" aria-modal="false" aria-labelledby="taskWindowTitle">
+        <div class="task-window-header" id="taskWindowHeader">
+            <span id="taskWindowTitle">Task Window</span>
+            <button class="task-window-close" id="taskWindowClose" type="button" aria-label="Close task window">X</button>
+        </div>
+        <div class="task-window-body" id="taskWindowBody"></div>
+    </section>
+
+    <section class="tablet-fluid-bottom-dock" id="tabletFluidBottomDock" hidden aria-label="Fluid basis calculation explanation"></section>
+
     <!-- About Dialog -->
     <div class="about-modal" id="aboutModal" hidden role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
         <div class="about-window">
@@ -301,6 +276,7 @@
     <script src="core/state-manager.js"></script>
     <script src="core/simulation-engine.js"></script>
     <script src="ui/sidebar-properties.js"></script>
+    <script src="ui/task-window.js"></script>
     <script src="ui/connections-renderer.js"></script>
     <script src="ui/context-menu.js"></script>
     <script src="ui/canvas-manager.js"></script>

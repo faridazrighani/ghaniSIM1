@@ -2,10 +2,7 @@
 let appMode = 'SELECT';
 let pendingConnectionStart = null;
 let onCanvasMouseMove = null;
-let connections = [
-    { from: 'TK-100', fromPort: '.port.outlet', to: 'P-100', toPort: '.port.inlet', pipeId: 'PIPE-1' },
-    { from: 'P-100', fromPort: '.port.outlet', to: 'TK-101', toPort: '.port.inlet', pipeId: 'PIPE-2' }
-];
+let connections = [];
 let instrumentLinks = [];
 let sourceLinks = [];
 
@@ -39,12 +36,7 @@ const globalModel = {
             specWeight: 8666.8,
             speedOfSound: 1427.3
         } 
-    },
-    "TK-100": { type: "tank", name: "TK-100", desc: "Storage Tank", props: { ...getDefaultProps('tank'), elevation: 5 } },
-    "PIPE-1": { type: "pipe", name: "PIPE-1", desc: "Suction Line", props: { minorLoss: 2.5, segments: [{ name: "Suction 12 in", pipeSize: "Custom diameter", diameter: 0.15, length: 20, roughness: 0.000045 }] } },
-    "P-100":  { type: "pump", name: "P-100", desc: "Transfer Pump", props: getDefaultProps('pump'), results: { flow: 0, head: 0, power: 0, npsha: 0, npshr: 0 } },
-    "PIPE-2": { type: "pipe", name: "PIPE-2", desc: "Discharge Line", props: { minorLoss: 5.0, segments: [{ name: "Discharge 4 in", pipeSize: "Custom diameter", diameter: 0.1, length: 300, roughness: 0.000045 }] } },
-    "TK-101": { type: "tank", name: "TK-101", desc: "Processing Tank", props: { ...getDefaultProps('tank'), elevation: 25 } }
+    }
 };
 
 let currentSelectedNode = null;

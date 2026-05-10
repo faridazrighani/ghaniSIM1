@@ -708,10 +708,8 @@ function renderFluidCalculationTraceContent(wrapper, fluidNode) {
 
     const trace = buildFluidCalculationTrace(fluidNode);
     renderFluidTraceInputBlock(wrapper, trace);
-    renderFluidTraceSourceMap(wrapper, trace);
     renderFluidTraceDependencyBlock(wrapper, trace);
     renderFluidTraceEquationSteps(wrapper, trace);
-    renderFluidTraceNotesBlock(wrapper, trace);
 }
 
 function updateFluidCalculationTraceReadout(fluidNode) {
@@ -870,7 +868,8 @@ function renderSidebar(nodeId) {
                 // Auto-calculate for Advanced Fluid Properties
                 if (n === 'FLUID' && globalModel[n].props.inputMode === 'Advanced') {
                     if (k === 'sg') {
-                        globalModel[n].props.density = v * 998.2;
+                        const densityRef = typeof FLUID_TRACE_WATER_REF_DENSITY === 'number' ? FLUID_TRACE_WATER_REF_DENSITY : 999.972;
+                        globalModel[n].props.density = v * densityRef;
                         if (globalModel[n].props.dynViscosity && globalModel[n].props.density > 0) {
                             globalModel[n].props.viscosity = globalModel[n].props.dynViscosity / (globalModel[n].props.density / 1000);
                         }
