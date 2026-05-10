@@ -60,6 +60,9 @@ const WARNING_PANEL_STATUS_PRIORITY = {
     normal: 3
 };
 
+const CANVAS_WARNING_PANEL_MARGIN = 12;
+let canvasWarningPanelDragState = null;
+
 function getPumpOperatingWarnings(node) {
     return Array.isArray(node?.results?.warnings)
         ? node.results.warnings.filter(Boolean)
@@ -224,11 +227,105 @@ function focusWarningNode(nodeId) {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
 }
 
+function clampCanvasWarningPanelPosition(left, top) {
+    const canvas = document.getElementById('canvas');
+    const panel = document.getElementById('canvasWarningPanel');
+    if (!canvas || !panel) return { left, top };
+
+    const margin = CANVAS_WARNING_PANEL_MARGIN;
+    const maxLeft = Math.max(margin, canvas.clientWidth - panel.offsetWidth - margin);
+    const maxTop = Math.max(margin, canvas.clientHeight - panel.offsetHeight - margin);
+
+    return {
+        left: Math.max(margin, Math.min(maxLeft, left)),
+        top: Math.max(margin, Math.min(maxTop, top))
+    };
+}
+
+function setCanvasWarningPanelPosition(left, top) {
+    const panel = document.getElementById('canvasWarningPanel');
+    if (!panel) return;
+    const position = clampCanvasWarningPanelPosition(left, top);
+    panel.style.left = `${position.left}px`;
+    panel.style.top = `${position.top}px`;
+    panel.style.right = 'auto';
+    panel.style.transform = 'none';
+}
+
+function positionCanvasWarningPanelDefault() {
+    const canvas = document.getElementById('canvas');
+    const legend = document.querySelector('.canvas-status-legend');
+    const panel = document.getElementById('canvasWarningPanel');
+    if (!canvas || !panel || panel.dataset.userMoved === 'true') return;
+
+    const margin = CANVAS_WARNING_PANEL_MARGIN;
+    const legendHidden = !legend || window.getComputedStyle(legend).display === 'none';
+    if (legendHidden) {
+        setCanvasWarningPanelPosition(margin, margin);
+        return;
+    }
+
+    const defaultTop = legend.offsetTop + legend.offsetHeight + 10;
+    const defaultLeft = legend.offsetLeft + legend.offsetWidth - panel.offsetWidth;
+    setCanvasWarningPanelPosition(defaultLeft, defaultTop);
+}
+
+function initCanvasWarningPanelWindow() {
+    const panel = document.getElementById('canvasWarningPanel');
+    const header = document.getElementById('canvasWarningHeader');
+    if (!panel || !header || panel.dataset.windowInitialized === 'true') return;
+
+    header.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button !== 0) return;
+        const startLeft = panel.offsetLeft;
+        const startTop = panel.offsetTop;
+        canvasWarningPanelDragState = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startLeft,
+            startTop
+        };
+        panel.dataset.userMoved = 'true';
+        header.setPointerCapture?.(event.pointerId);
+        event.stopPropagation();
+        event.preventDefault();
+    });
+
+    header.addEventListener('pointermove', event => {
+        if (!canvasWarningPanelDragState || canvasWarningPanelDragState.pointerId !== event.pointerId) return;
+        const dx = event.clientX - canvasWarningPanelDragState.startX;
+        const dy = event.clientY - canvasWarningPanelDragState.startY;
+        setCanvasWarningPanelPosition(
+            canvasWarningPanelDragState.startLeft + dx,
+            canvasWarningPanelDragState.startTop + dy
+        );
+        event.stopPropagation();
+        event.preventDefault();
+    });
+
+    const stopDrag = event => {
+        if (!canvasWarningPanelDragState || canvasWarningPanelDragState.pointerId !== event.pointerId) return;
+        canvasWarningPanelDragState = null;
+        header.releasePointerCapture?.(event.pointerId);
+        event.stopPropagation();
+    };
+
+    header.addEventListener('pointerup', stopDrag);
+    header.addEventListener('pointercancel', stopDrag);
+
+    panel.dataset.windowInitialized = 'true';
+    requestAnimationFrame(positionCanvasWarningPanelDefault);
+}
+
 function updateCanvasWarningPanel() {
     const panel = document.getElementById('canvasWarningPanel');
     const list = document.getElementById('canvasWarningList');
     const count = document.getElementById('canvasWarningCount');
     if (!panel || !list || !count) return;
+
+    initCanvasWarningPanelWindow();
+    positionCanvasWarningPanelDefault();
 
     const summaries = Object.entries(globalModel)
         .map(([nodeId, node]) => getEquipmentWarningSummary(nodeId, node))
@@ -744,6 +841,43 @@ function isCanvasBackgroundTarget(target) {
     ));
 }
 
+function shouldSourcePortStartSemanticAttachment(source) {
+    const type = source?.props?.sourceType || 'Standalone Boundary Source';
+    return type === 'Open Tank / Reservoir' || type === 'Pressurized Vessel';
+}
+
+function startHydraulicConnectionFromSource(sourceId, e = null) {
+    const source = globalModel[sourceId];
+    if (!source || source.type !== 'source') return;
+
+    const portSelector = '.port.outlet';
+    const startPoint = getPortPosition(sourceId, portSelector) || getObjectCenterPosition(sourceId);
+    if (!startPoint) return;
+
+    if (pendingConnectionStart) cancelPendingConnection(false);
+    setAppMode('CONNECT');
+
+    const currentPoint = e ? getCanvasPointFromEvent(e) : { x: startPoint.x + 96, y: startPoint.y };
+    pendingConnectionStart = {
+        kind: 'pipe',
+        id: sourceId,
+        portSelector,
+        routeStyle: nextPipeRouteStyle,
+        currentX: currentPoint.x,
+        currentY: currentPoint.y
+    };
+
+    onCanvasMouseMove = (ev) => {
+        const point = getCanvasPointFromEvent(ev);
+        pendingConnectionStart.currentX = point.x;
+        pendingConnectionStart.currentY = point.y;
+        drawConnections();
+    };
+
+    document.addEventListener('pointermove', onCanvasMouseMove);
+    drawConnections();
+}
+
 function makeDraggable(obj) {
     const getDefaultConnectPort = (isStart) => {
         if (isStart) {
@@ -856,7 +990,7 @@ function makeDraggable(obj) {
                     return;
                 }
 
-                if (node && node.type === 'source') {
+                if (node && node.type === 'source' && shouldSourcePortStartSemanticAttachment(node)) {
                     startSourceAttachment(nodeId, e);
                     return;
                 }
@@ -908,7 +1042,8 @@ function makeDraggable(obj) {
                             fromPort: pendingConnectionStart.portSelector,
                             to: nodeId,
                             toPort: portClass,
-                            pipeId: pipeId
+                            pipeId: pipeId,
+                            connectionType: 'hydraulic'
                         };
                         connections.push(
                             typeof orientHydraulicConnection === 'function'
@@ -938,7 +1073,7 @@ function makeDraggable(obj) {
             return;
         }
 
-        if (node && node.type === 'source') {
+        if (node && node.type === 'source' && shouldSourcePortStartSemanticAttachment(node)) {
             e.stopPropagation();
             startSourceAttachment(nodeId, e);
             return;
@@ -969,14 +1104,22 @@ function makeDraggable(obj) {
         if (node && node.type === 'source') {
             const sourceLink = getSourceLink(nodeId);
             const items = [
-                {
-                    label: 'Attach to equipment',
+            ];
+
+            if (typeof isSourceTypeSemanticAttachmentCapable !== 'function' || isSourceTypeSemanticAttachmentCapable(node)) {
+                items.push({
+                    label: 'Start dashed tank/vessel attachment',
                     action: () => {
                         setAppMode('CONNECT');
                         startSourceAttachment(nodeId, e);
                     }
-                }
-            ];
+                });
+            } else {
+                items.push({
+                    label: 'Start solid hydraulic pipe',
+                    action: () => startHydraulicConnectionFromSource(nodeId, e)
+                });
+            }
 
             if (sourceLink) {
                 items.push({
@@ -1079,6 +1222,7 @@ function makeDraggable(obj) {
 function startSourceAttachment(sourceId, e = null) {
     const source = globalModel[sourceId];
     if (!source || source.type !== 'source') return;
+    if (typeof isSourceTypeSemanticAttachmentCapable === 'function' && !isSourceTypeSemanticAttachmentCapable(source)) return;
 
     const startPoint = getPortPosition(sourceId, '.port.outlet') || getObjectCenterPosition(sourceId);
     if (!startPoint) return;

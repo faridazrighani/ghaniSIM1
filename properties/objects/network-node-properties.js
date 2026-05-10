@@ -1,4 +1,22 @@
 const SOURCE_SCHEMA = {
+    sourceType: {
+        label: 'Source Type',
+        type: 'select',
+        default: 'Open Tank / Reservoir',
+        options: [
+            'Open Tank / Reservoir',
+            'Pressurized Vessel',
+            'External Header / Pipe Tie-in',
+            'Fixed Flow Source',
+            'Standalone Boundary Source'
+        ]
+    },
+    boundaryDataSource: {
+        label: 'Boundary Data Source',
+        type: 'select',
+        default: 'Manual',
+        options: ['Manual', 'Inherit from Attached Equipment']
+    },
     pressureInputBasis: {
         label: 'Pressure Basis',
         type: 'select',
@@ -6,6 +24,13 @@ const SOURCE_SCHEMA = {
         options: ['Gauge', 'Absolute']
     },
     pressure: { label: 'Boundary Pressure', unit: 'bar g', type: 'number', default: 0 },
+    pressureEnergyBasis: {
+        label: 'Pressure Energy Basis',
+        type: 'select',
+        default: 'Static Pressure',
+        options: ['Static Pressure', 'Total / Stagnation Pressure']
+    },
+    elevation: { label: 'Source Elevation', unit: 'm', type: 'number', default: 0 },
     temperatureMode: {
         label: 'Temperature Mode',
         type: 'select',
@@ -17,7 +42,7 @@ const SOURCE_SCHEMA = {
         label: 'Flow Input Mode',
         type: 'select',
         default: 'Mass Flow',
-        options: ['Volumetric Flow', 'Mass Flow']
+        options: ['Volumetric Flow', 'Mass Flow', 'Solve from Network']
     },
     flow: { label: 'Volumetric Flow', unit: 'm3/h', type: 'number', default: 9.5 },
     massFlow: { label: 'Mass Flow', unit: 'kg/h', type: 'number', default: 9500 }

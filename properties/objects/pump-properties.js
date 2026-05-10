@@ -10,6 +10,8 @@ const PUMP_DEFAULT_PROPS = {
     optimizationMode: PUMP_OPTIMIZATION_MODE_MANUAL,
     npshrSourceMode: PUMP_NPSHR_SOURCE_ESTIMATED,
     elevation: 0,
+    suctionElevation: 0,
+    dischargeElevation: 0,
     designFlow: 100,
     designHead: 40,
     designEfficiency: 75,

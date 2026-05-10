@@ -92,9 +92,33 @@ function evaluateCustomAdvancedTrace(overrides = {}) {
 `, context);
 }
 
+function evaluateCustomBasicTrace(overrides = {}) {
+    return vm.runInContext(`
+(() => {
+    Object.assign(globalModel.FLUID.props, {
+        inputMode: 'Basic',
+        fluidName: 'Custom',
+        temp: 25,
+        density: 800,
+        sg: 0.8,
+        dynViscosity: 99,
+        viscosity: 2,
+        vaporPressure: 0.2,
+        specificHeat: 2.1,
+        bulkModulus: 1.6
+    }, ${JSON.stringify(overrides)});
+    recalcExtendedFluidProps(globalModel.FLUID);
+    return buildFluidCalculationTrace(globalModel.FLUID);
+})()
+`, context);
+}
+
 const waterTrace = evaluateWaterTrace();
 const waterDensity = waterTrace.propertySourceMap.find(item => item.property === 'Density').value;
 const waterVaporPressure = waterTrace.propertySourceMap.find(item => item.property === 'Vapor pressure').value;
+const waterVaporPressureHead = waterTrace.propertySourceMap.find(item => item.property === 'Vapor pressure head').value;
+const waterSourceMapProperties = waterTrace.propertySourceMap.map(item => item.property);
+const waterStepTitles = waterTrace.steps.map(step => step.title);
 const waterSgStep = waterTrace.steps.find(step => step.title === 'Specific Gravity');
 const waterSpecificVolumeStep = waterTrace.steps.find(step => step.title === 'Specific Volume');
 const waterSpecificWeightStep = waterTrace.steps.find(step => step.title === 'Specific Weight');
@@ -103,10 +127,39 @@ const waterVaporHeadStep = waterTrace.steps.find(step => step.title === 'Vapor P
 assert(waterTrace.status === 'OK', `Expected water trace OK, got ${waterTrace.status}`);
 assert(waterTrace.inputBasis.propertyMethod.includes('IAPWS'), 'Expected water trace to include IAPWS method label');
 assert(waterTrace.propertySourceMap.find(item => item.property === 'Density').source.includes('IAPWS'), 'Expected water density source classification');
+[
+    'Density',
+    'Dynamic Viscosity',
+    'Vapor Pressure',
+    'Specific Heat',
+    'Bulk Modulus',
+    'Specific Gravity',
+    'Kinematic Viscosity',
+    'Specific Weight',
+    'Specific Volume',
+    'Vapor Pressure Head',
+    'Speed of Sound'
+].forEach(title => {
+    assert(waterStepTitles.includes(title), `Expected Equation Steps to include ${title}`);
+});
+waterSourceMapProperties.forEach(property => {
+    const stepTitle = property.replace('Dynamic viscosity', 'Dynamic Viscosity')
+        .replace('Kinematic viscosity', 'Kinematic Viscosity')
+        .replace('Vapor pressure head', 'Vapor Pressure Head')
+        .replace('Vapor pressure', 'Vapor Pressure')
+        .replace('Specific gravity', 'Specific Gravity')
+        .replace('Specific volume', 'Specific Volume')
+        .replace('Specific weight', 'Specific Weight')
+        .replace('Specific heat', 'Specific Heat')
+        .replace('Bulk modulus', 'Bulk Modulus')
+        .replace('Speed of sound', 'Speed of Sound');
+    assert(waterStepTitles.includes(stepTitle), `Expected source map property ${property} to have an equation/source step`);
+});
 assertClose('water SG trace', waterSgStep.result, waterDensity / 999.972, 0.00001);
 assertClose('water specific volume trace', waterSpecificVolumeStep.result, 1 / waterDensity, 0.00000001);
 assertClose('water specific weight trace', waterSpecificWeightStep.result, waterDensity * 9.81, 0.01);
 assertClose('water vapor pressure head trace', waterVaporHeadStep.result, waterVaporPressure * 100000 / (waterDensity * 9.81), 0.01);
+assertClose('water vapor pressure head source map matches equation', waterVaporHeadStep.result, waterVaporPressureHead, 0.0001);
 assert(waterTrace.npshRelevance.some(item => item.includes('Vapor pressure')), 'Expected NPSH relevance notes');
 
 const customTrace = evaluateCustomAdvancedTrace();
@@ -114,6 +167,10 @@ assert(customTrace.status === 'Needs Review', `Expected custom trace to need rev
 assert(customTrace.propertySourceMap.find(item => item.property === 'Density').source === 'User input', 'Expected custom density to be user input');
 assert(customTrace.steps.find(step => step.title === 'Kinematic Viscosity').substitution.includes('18.000000'), 'Expected custom viscosity substitution from dynamic viscosity');
 assert(customTrace.warnings.some(item => item.includes('Custom Advanced')), 'Expected custom advanced validation note');
+
+const customBasicTrace = evaluateCustomBasicTrace();
+assertClose('custom basic dynamic viscosity from kinematic input', customBasicTrace.steps.find(step => step.title === 'Dynamic Viscosity').result, 1.6, 0.000001);
+assertClose('custom basic kinematic viscosity remains input basis', customBasicTrace.steps.find(step => step.title === 'Kinematic Viscosity').result, 2, 0.000001);
 
 const invalidTrace = evaluateCustomAdvancedTrace({ density: 0, viscosity: 0, vaporPressure: -1 });
 assert(invalidTrace.status === 'Needs Review', 'Expected invalid trace to need review');

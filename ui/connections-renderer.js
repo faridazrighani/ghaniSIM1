@@ -179,6 +179,7 @@ function drawConnections() {
         const source = globalModel[link.sourceId];
         const target = globalModel[link.targetId];
         if (!source || !target) return;
+        if (typeof isSourceTypeSemanticAttachmentCapable === 'function' && !isSourceTypeSemanticAttachmentCapable(source)) return;
 
         const p1 = getPortPosition(link.sourceId, '.port.outlet') || getObjectCenterPosition(link.sourceId);
         const p2 = getSourceAttachTargetPosition(link);
@@ -204,7 +205,7 @@ function drawConnections() {
                 pathHTML += `<path class="source-feed-line pipe-preview-line" d="${pointsToPath([p1, p2])}" stroke="#5c7f5c" marker-end="url(#source-link-arrow)" fill="none" />`;
             } else {
                 const routePoints = buildPipeRoutePoints(p1, p2, pendingConnectionStart.routeStyle || 'Straight');
-                pathHTML += `<path class="pipe-preview-line" d="${pointsToPath(routePoints)}" stroke="var(--pipe-color)" stroke-width="4" stroke-dasharray="8,6" fill="none" stroke-linejoin="round" stroke-linecap="round" />`;
+                pathHTML += `<path class="pipe-preview-line hydraulic-preview-line" d="${pointsToPath(routePoints)}" stroke="var(--pipe-color)" stroke-width="4" fill="none" stroke-linejoin="round" stroke-linecap="round" />`;
             }
         }
     }

@@ -10,10 +10,13 @@ The direct derived formulas are mathematically consistent after the update:
 
 - Specific gravity: `SG = rho / rho_ref`
 - Kinematic viscosity: `nu(cSt) = mu(cP) / (rho / 1000)`
+- Custom Basic dynamic viscosity: `mu(cP) = nu(cSt) * (rho / 1000)`
 - Specific volume: `v = 1 / rho`
 - Specific weight: `gamma = rho * g`
 - Vapor pressure head: `Hv = Pv(Pa) / (rho * g)`
 - Speed of sound: `a = sqrt(K(Pa) / rho)`
+
+Equation Steps now mirrors every visible Fluid Basis value in the Task Window, including primary/source values and derived values. Result badge precision is property-specific, so specific gravity, vapor pressure, and specific volume no longer appear to disagree with the realtime Input Basis readout because of over-aggressive rounding.
 
 The application uses:
 
@@ -50,6 +53,7 @@ NIST REFPROP documentation was not separately used in this audit because the Che
 
 | Property | Formula | Unit conversion | Status |
 | --- | --- | --- | --- |
+| Dynamic viscosity, Custom Basic | `mu = nu * rho` | `mu(cP) = nu(cSt) * (rho / 1000)` | Formula verified |
 | Specific gravity | `SG = rho / rho_ref` | `rho_ref = 999.972 kg/m3` | Formula verified |
 | Kinematic viscosity | `nu = mu / rho` | `nu(cSt) = mu(cP) / (rho / 1000)` | Formula verified |
 | Specific volume | `v = 1 / rho` | `rho` in `kg/m3`; `v` in `m3/kg` | Formula verified |
@@ -137,7 +141,7 @@ Application values at 25 deg C:
 | --- | ---: | --- | --- |
 | Density | `887.500 kg/m3` | No palm oil source found in `pdf_ref` | Needs verification |
 | Dynamic viscosity | `77.190 cP` | No palm oil source found in `pdf_ref` | Needs verification |
-| Kinematic viscosity | `86.970 cSt` | Derived formula verified, primary table source not verified | Formula verified for derivation; primary data needs verification |
+| Kinematic viscosity | `86.975 cSt` | `77.190 / (887.500 / 1000) = 86.974648`; primary table source not verified | Formula verified for derivation; primary data needs verification |
 | Vapor pressure | `0.001 bar a` | Default low vapor pressure estimate, no reference found | Needs verification |
 | Specific heat | `1.861 kJ/kg.K` | No palm oil source found in `pdf_ref` | Needs verification |
 | Bulk modulus | `1.800 GPa` | Default estimate, no reference found | Needs verification |
@@ -177,6 +181,10 @@ Water and methanol point checks are well inside the default tolerance. Palm oil 
 | Default startup state had older approximate water 25 deg C values. | Default values were close but not aligned with the current water correlation. | Startup recalculated Water automatically, but the serialized default should also be consistent. | Updated `core/default-state.js`; `New/Clear Canvas` now recalculates Water defaults. |
 | Palm oil references not available. | App table values exist. | No supporting `pdf_ref` source was found. | UI marks primary values `Needs verification`. No speculative numeric changes made. |
 | Crude oil standards not available. | Code labels API/ASTM-style estimates. | API MPMS 11.1 and ASTM D341 documents were not found in `pdf_ref`. | UI marks primary values `Needs verification` or `Engineering estimate`. No speculative numeric changes made. |
+| Fluid Basis readout did not show Vapor Pressure Head as a live Fluid Basis property. | Equation Steps calculated `Hv`, but the readout grid only showed vapor pressure and other derived properties. Users could compare `Hv` against rounded vapor pressure and see an apparent mismatch. | Hydraulic Institute pressure-head relation: `h = 1000 P(kPa) / (g rho)`, equivalent to `Hv = Pv(bar a) * 100000 / (rho * g)`. | Fixed by storing `vaporPressureHead` in Fluid Basis derived props and showing it in the Task Window readout. Vapor pressure is now shown with more precision in the Task Window. |
+| Equation Steps used one precision style and did not show every visible value. | Some result badges used 3 decimals even when the readout used 5 to 8 significant digits, and primary values such as vapor pressure/specific heat/bulk modulus were not shown as their own steps. | The Task Window should let users trace every visible value from either a source method or a derived formula. | Fixed by adding source/equation steps for all visible properties and property-specific result precision. |
+| Custom Basic viscosity direction was ambiguous. | Basic mode exposes kinematic viscosity as the editable input, but recalculation could preserve stale dynamic viscosity after density changes. | If `nu` is the Basic input basis, `mu(cP) = nu(cSt) * (rho / 1000)` must be the derived value; Advanced mode keeps `mu` as primary and derives `nu`. | Fixed in Task Window recalculation and Fluid Calculation Trace. |
+| Palm oil kinematic viscosity used rounded table values. | Table had a separate rounded cSt column. | The displayed derived formula should match `nu(cSt) = mu(cP) / (rho / 1000)`. | Fixed by deriving palm oil kinematic viscosity from table dynamic viscosity and density. Primary palm oil data remains `Needs verification`. |
 
 ## 9. Changes Made
 
@@ -184,11 +192,16 @@ Water and methanol point checks are well inside the default tolerance. Palm oil 
 - Added value, unit, method, formula/dependency, reference, and verification status to Property Source Map rows.
 - Added specific heat and bulk modulus to the trace value map.
 - Updated Equation Steps references to identify the audited formulas and unit bases.
+- Expanded Equation Steps to include every visible Fluid Basis property, including density, dynamic viscosity, vapor pressure, specific heat, and bulk modulus source steps.
+- Added property-specific Equation Steps precision so result badges match realtime readout precision.
+- Fixed Custom Basic mode so kinematic viscosity is the editable input basis and dynamic viscosity is derived from density.
+- Derived palm oil kinematic viscosity from dynamic viscosity and density instead of the rounded table cSt column.
 - Fixed the legacy manual SG edit path to use `999.972 kg/m3`.
 - Updated the default Water 25 deg C state to the current correlation output.
 - Recalculated Water default values after New/Clear Canvas.
 - Added the Fluid Basis Task Window, Help dropdown, and Help > Fluid Properties Task Window content.
 - Removed Property Source Map and NPSH Academic Notes from the legacy Fluid Basis sidebar trace path so those audited notes are only shown through Help > Fluid Properties.
+- Added live Fluid Basis `vaporPressureHead` derived property so the readout, Property Source Map, and Equation Steps use the same `Hv` value.
 
 ## 10. Items Still Needing Verification
 

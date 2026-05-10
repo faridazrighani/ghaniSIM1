@@ -149,6 +149,9 @@ function evaluateAppCase(options) {
             type: 'source',
             name: 'SRC-100',
             props: {
+                sourceType: 'Standalone Boundary Source',
+                boundaryDataSource: 'Manual',
+                flowInputMode: 'Volumetric Flow',
                 pressureInputBasis: options.sourceBasis,
                 pressure: options.sourcePressure,
                 elevation: options.sourceElevation,
@@ -171,6 +174,21 @@ function evaluateAppCase(options) {
             type: 'pipe',
             name: 'PIPE-1',
             props: pipeProps
+        },
+        'PIPE-1B': {
+            type: 'pipe',
+            name: 'PIPE-1B',
+            props: {
+                ...pipeProps,
+                segments: [{
+                    ...pipeProps.segments[0],
+                    name: 'Valve-to-pump connector',
+                    length: 0,
+                    fittingQuantity: 0,
+                    fittingK: 0,
+                    minorLoss: 0
+                }]
+            }
         },
         'P-100': {
             type: 'pump',
@@ -213,14 +231,17 @@ function evaluateAppCase(options) {
         }
     });
 
-    connections.splice(0, connections.length,
-        { from: 'V-100', fromPort: '.port.outlet', to: 'P-100', toPort: '.port.inlet', pipeId: 'PIPE-1' },
-        { from: 'P-100', fromPort: '.port.outlet', to: 'SNK-100', toPort: '.port.inlet', pipeId: 'PIPE-2' }
-    );
-    sourceLinks.splice(0, sourceLinks.length);
+    connections.splice(0, connections.length);
     if (options.attachSource !== false) {
-        sourceLinks.push({ sourceId: 'SRC-100', targetId: 'V-100', targetPort: '.port.inlet' });
+        connections.push(
+            { from: 'SRC-100', fromPort: '.port.outlet', to: 'V-100', toPort: '.port.inlet', pipeId: 'PIPE-1' },
+            { from: 'V-100', fromPort: '.port.outlet', to: 'P-100', toPort: '.port.inlet', pipeId: 'PIPE-1B' }
+        );
+    } else {
+        connections.push({ from: 'V-100', fromPort: '.port.outlet', to: 'P-100', toPort: '.port.inlet', pipeId: 'PIPE-1' });
     }
+    connections.push({ from: 'P-100', fromPort: '.port.outlet', to: 'SNK-100', toPort: '.port.inlet', pipeId: 'PIPE-2' });
+    sourceLinks.splice(0, sourceLinks.length);
 
     return runPumpNpshEvaluation('P-100');
 })()

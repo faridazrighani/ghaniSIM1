@@ -1,5 +1,17 @@
 const PIPE_SCHEMA = {
     routeStyle: { label: 'Pipe Routing', type: 'select', options: ['Straight', 'Elbow'], default: 'Straight' },
+    elevationProfileMode: {
+        label: 'Elevation Profile',
+        type: 'select',
+        options: ['Ignore', 'End Elevations', 'High Point Check'],
+        default: 'End Elevations'
+    },
+    startElevation: { label: 'Start Elevation Override', unit: 'm', type: 'number', default: '' },
+    endElevation: { label: 'End Elevation Override', unit: 'm', type: 'number', default: '' },
+    highPointElevation: { label: 'High Point Elevation', unit: 'm', type: 'number', default: '' },
+    highPointLocationPercent: { label: 'High Point Location', unit: '% length', type: 'number', default: 50 },
+    roughnessAgingFactor: { label: 'Aging Roughness Factor', unit: 'x', type: 'number', default: 1 },
+    headLossAllowancePercent: { label: 'Head Loss Allowance', unit: '%', type: 'number', default: 0 },
     minorLoss: { label: 'Fittings (K)', unit: '', type: 'number', default: 0 }
 };
 
@@ -26,13 +38,13 @@ const PIPE_SIZE_OPTIONS = [
 ];
 
 const PIPE_MATERIAL_OPTIONS = [
-    { label: 'Commercial steel', roughness: 0.000045 },
-    { label: 'Drawn tubing', roughness: 0.0000015 },
-    { label: 'Stainless steel', roughness: 0.000015 },
-    { label: 'PVC / smooth plastic', roughness: 0.0000015 },
-    { label: 'Cast iron', roughness: 0.00026 },
-    { label: 'Concrete', roughness: 0.0015 },
-    { label: 'Custom roughness', roughness: null }
+    { label: 'Commercial steel', roughness: 0.000045, source: 'Moody/Fox typical value', status: 'Typical' },
+    { label: 'Drawn tubing', roughness: 0.0000015, source: 'Moody/Fox typical smooth tube value', status: 'Typical' },
+    { label: 'Stainless steel', roughness: 0.000015, source: 'Engineering estimate; verify vendor data', status: 'Estimate' },
+    { label: 'PVC / smooth plastic', roughness: 0.0000015, source: 'Hydraulically smooth plastic typical value', status: 'Typical' },
+    { label: 'Cast iron', roughness: 0.00026, source: 'Moody/Fox typical cast iron value', status: 'Typical' },
+    { label: 'Concrete', roughness: 0.0015, source: 'Engineering estimate; roughness varies widely', status: 'Estimate' },
+    { label: 'Custom roughness', roughness: null, source: 'User-entered roughness', status: 'User' }
 ];
 
 const PIPE_FITTING_CUSTOM = 'Custom K';
@@ -40,26 +52,26 @@ const PIPE_FITTING_NONE = 'None';
 const PIPE_FITTING_ROUTE_ELBOW = '90 smooth bend - flanged';
 
 const PIPE_FITTING_OPTIONS = [
-    { label: PIPE_FITTING_NONE, k: 0 },
-    { label: 'Sharp-edged entrance', k: 0.5 },
-    { label: 'Reentrant entrance', k: 0.8 },
-    { label: 'Well-rounded entrance', k: 0.03 },
-    { label: 'Submerged exit', k: 1.0 },
-    { label: PIPE_FITTING_ROUTE_ELBOW, k: 0.3 },
-    { label: '90 elbow - threaded', k: 0.9 },
-    { label: '90 miter bend - no vanes', k: 1.1 },
-    { label: '90 miter bend - with vanes', k: 0.2 },
-    { label: '45 elbow - threaded', k: 0.4 },
-    { label: '180 return bend - flanged', k: 0.2 },
-    { label: 'Tee - line flow flanged', k: 0.2 },
-    { label: 'Tee - branch flow flanged', k: 1.0 },
-    { label: 'Threaded union', k: 0.08 },
-    { label: 'Gate valve - fully open', k: 0.2 },
-    { label: 'Globe valve - fully open', k: 10.0 },
-    { label: 'Angle valve - fully open', k: 5.0 },
-    { label: 'Ball valve - fully open', k: 0.05 },
-    { label: 'Swing check valve', k: 2.0 },
-    { label: PIPE_FITTING_CUSTOM, k: null }
+    { label: PIPE_FITTING_NONE, k: 0, source: 'No local fitting loss', status: 'Exact' },
+    { label: 'Sharp-edged entrance', k: 0.5, source: 'Textbook typical minor loss coefficient', status: 'Typical' },
+    { label: 'Reentrant entrance', k: 0.8, source: 'Textbook typical minor loss coefficient', status: 'Typical' },
+    { label: 'Well-rounded entrance', k: 0.03, source: 'Textbook typical minor loss coefficient', status: 'Typical' },
+    { label: 'Submerged exit', k: 1.0, source: 'Textbook exit loss coefficient', status: 'Typical' },
+    { label: PIPE_FITTING_ROUTE_ELBOW, k: 0.3, source: 'Textbook/Crane-style typical bend K', status: 'Typical' },
+    { label: '90 elbow - threaded', k: 0.9, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: '90 miter bend - no vanes', k: 1.1, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: '90 miter bend - with vanes', k: 0.2, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: '45 elbow - threaded', k: 0.4, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: '180 return bend - flanged', k: 0.2, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: 'Tee - line flow flanged', k: 0.2, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: 'Tee - branch flow flanged', k: 1.0, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: 'Threaded union', k: 0.08, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: 'Gate valve - fully open', k: 0.2, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Globe valve - fully open', k: 10.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Angle valve - fully open', k: 5.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Ball valve - fully open', k: 0.05, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Swing check valve', k: 2.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: PIPE_FITTING_CUSTOM, k: null, source: 'User-entered loss coefficient', status: 'User' }
 ];
 
 const PIPE_DEFAULT_SEGMENTS = [
@@ -73,7 +85,11 @@ const PIPE_DEFAULT_SEGMENTS = [
         fittingType: PIPE_FITTING_NONE,
         fittingQuantity: 0,
         fittingK: 0,
-        minorLoss: 0
+        minorLoss: 0,
+        startElevation: '',
+        endElevation: '',
+        highPointElevation: '',
+        highPointLocationPercent: 50
     }
 ];
 
@@ -87,6 +103,22 @@ function getPipeMaterialOption(label) {
 
 function getPipeFittingOption(label) {
     return PIPE_FITTING_OPTIONS.find(item => item.label === label) || PIPE_FITTING_OPTIONS[0];
+}
+
+function getPipeMaterialSource(segment) {
+    const option = getPipeMaterialOption(segment?.material);
+    if (option.label === 'Custom roughness') {
+        return { status: 'User', source: 'User-entered roughness' };
+    }
+    return { status: option.status || 'Typical', source: option.source || 'Typical engineering value' };
+}
+
+function getPipeFittingSource(segment) {
+    const option = getPipeFittingOption(segment?.fittingType);
+    if (option.label === PIPE_FITTING_CUSTOM) {
+        return { status: 'User', source: 'User-entered loss coefficient' };
+    }
+    return { status: option.status || 'Typical', source: option.source || 'Typical engineering value' };
 }
 
 function getPipeFittingK(segment) {
@@ -110,9 +142,18 @@ function getPipeSegmentTotalK(segment) {
     return getPipeFittingTotalK(segment) + getPipeAdditionalK(segment);
 }
 
+function normalizeOptionalPipeNumber(value) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : '';
+}
+
 function normalizePipeProps(pipeProps) {
     if (!pipeProps) return { segments: [] };
     pipeProps.routeStyle = pipeProps.routeStyle || 'Straight';
+    pipeProps.elevationProfileMode = pipeProps.elevationProfileMode || 'End Elevations';
+    pipeProps.roughnessAgingFactor = Math.max(0, parseFloat(pipeProps.roughnessAgingFactor) || 1);
+    pipeProps.headLossAllowancePercent = Math.max(0, parseFloat(pipeProps.headLossAllowancePercent) || 0);
+    pipeProps.highPointLocationPercent = Math.max(0, Math.min(100, parseFloat(pipeProps.highPointLocationPercent) || 50));
     if (!Array.isArray(pipeProps.segments) || pipeProps.segments.length === 0) {
         pipeProps.segments = PIPE_DEFAULT_SEGMENTS.map(segment => ({ ...segment }));
     }
@@ -146,6 +187,11 @@ function normalizePipeProps(pipeProps) {
         } else {
             segment.minorLoss = Math.max(0, parseFloat(segment.minorLoss) || 0);
         }
+
+        segment.startElevation = normalizeOptionalPipeNumber(segment.startElevation);
+        segment.endElevation = normalizeOptionalPipeNumber(segment.endElevation);
+        segment.highPointElevation = normalizeOptionalPipeNumber(segment.highPointElevation);
+        segment.highPointLocationPercent = Math.max(0, Math.min(100, parseFloat(segment.highPointLocationPercent) || 50));
 
         if (pipeProps.routeStyle !== 'Elbow' && segment.routeFittingAuto) {
             segment.fittingType = PIPE_FITTING_NONE;

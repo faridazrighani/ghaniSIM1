@@ -22,6 +22,13 @@ function normalizePumpProps(props = {}) {
         props.npshrSourceMode = estimatedNpshr;
     }
 
+    props.elevation = toPumpNumber(props.elevation, 0);
+    if (props.suctionElevation === undefined || props.suctionElevation === null || props.suctionElevation === '') {
+        props.suctionElevation = props.elevation;
+    }
+    if (props.dischargeElevation === undefined || props.dischargeElevation === null || props.dischargeElevation === '') {
+        props.dischargeElevation = props.elevation;
+    }
     props.designFlow = clampPumpNumber(props.designFlow, 100, 0.001, 1000000);
     props.designHead = clampPumpNumber(props.designHead, 40, 0.001, 1000000);
     props.designEfficiency = clampPumpNumber(props.designEfficiency, 75, 1, 95);
@@ -300,25 +307,35 @@ function sumPumpTraceLoss(entries, key) {
 function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot, flowRateM3H, pumpHead, performanceModel, npshr, npshEvaluation) {
     const fluid = typeof globalModel !== 'undefined' ? globalModel.FLUID : null;
     const boundary = hydraulicContext?.suctionBoundary || null;
+    const sourceBoundary = boundary?.type === 'source' && typeof resolveSourceBoundaryData === 'function'
+        ? resolveSourceBoundaryData(boundary, globalModel)
+        : null;
+    const pressureSourceNode = sourceBoundary?.isInherited && sourceBoundary.attachedEquipment
+        ? sourceBoundary.attachedEquipment
+        : boundary;
     const density = Math.max(toPumpNumber(hydraulicContext?.density, fluid?.props?.density || 1000), 1);
     const gravity = typeof GRAVITY === 'number' ? GRAVITY : 9.81;
     const vaporPressureBarA = toPumpNumber(hydraulicContext?.vaporPressurePa, 0) / 100000;
     const pressureInputBasis = typeof getNodePressureInputBasis === 'function'
-        ? getNodePressureInputBasis(boundary)
-        : (boundary?.props?.pressureInputBasis || 'Absolute');
+        ? getNodePressureInputBasis(pressureSourceNode)
+        : (pressureSourceNode?.props?.pressureInputBasis || 'Absolute');
     const pressureInputUnit = typeof getPressureInputUnit === 'function'
         ? getPressureInputUnit(pressureInputBasis)
         : (pressureInputBasis === 'Gauge' ? 'bar g' : 'bar a');
-    const boundaryPressureInput = toPumpNumber(boundary?.props?.pressure, 0);
-    const boundaryPressureAbs = typeof getNodeAbsolutePressureBar === 'function'
-        ? getNodeAbsolutePressureBar(boundary)
-        : boundaryPressureInput;
+    const boundaryPressureInput = toPumpNumber(pressureSourceNode?.props?.pressure, 0);
+    const boundaryPressureAbs = sourceBoundary
+        ? sourceBoundary.pressureAbsBar
+        : (typeof getNodeAbsolutePressureBar === 'function'
+            ? getNodeAbsolutePressureBar(boundary)
+            : boundaryPressureInput);
     const pressureHead = typeof pressureBarToHead === 'function'
         ? pressureBarToHead(boundaryPressureAbs, density)
         : boundaryPressureAbs * 100000 / (density * gravity);
-    const boundaryElevation = typeof getNodeHydraulicElevation === 'function'
-        ? getNodeHydraulicElevation(boundary)
-        : toPumpNumber(boundary?.props?.elevation, 0);
+    const boundaryElevation = sourceBoundary
+        ? sourceBoundary.elevation
+        : (typeof getNodeHydraulicElevation === 'function'
+            ? getNodeHydraulicElevation(boundary)
+            : toPumpNumber(boundary?.props?.elevation, 0));
     const pumpElevation = toPumpNumber(hydraulicSnapshot?.pumpElevation, toPumpNumber(pump?.props?.elevation, 0));
     const lossEntries = hydraulicSnapshot?.suctionLossBreakdown?.entries || [];
     const majorLoss = sumPumpTraceLoss(lossEntries, 'majorLoss');
@@ -352,9 +369,9 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
     return {
         basis: {
             fluidName: fluid?.props?.fluidName || fluid?.name || '-',
-            temperature: roundPumpTraceNumber(boundary?.props?.temp ?? fluid?.props?.temp, 3),
+            temperature: roundPumpTraceNumber(hydraulicContext?.fluidProps?.temp ?? boundary?.props?.temp ?? fluid?.props?.temp, 3),
             density: roundPumpTraceNumber(density, 3),
-            viscosity: roundPumpTraceNumber(fluid?.props?.viscosity, 3),
+            viscosity: roundPumpTraceNumber(hydraulicContext?.fluidProps?.viscosity ?? fluid?.props?.viscosity, 3),
             vaporPressureBarA: roundPumpTraceNumber(vaporPressureBarA, 6),
             gravity: roundPumpTraceNumber(gravity, 3)
         },
@@ -368,6 +385,8 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
             absolutePressureBar: roundPumpTraceNumber(boundaryPressureAbs, 3),
             pressureHead: roundPumpTraceNumber(pressureHead, 3),
             elevation: roundPumpTraceNumber(boundaryElevation, 3),
+            boundaryDataSource: sourceBoundary?.boundaryDataSource || 'Manual',
+            attachedEquipment: sourceBoundary?.attachedEquipmentId || '-',
             flow: roundPumpTraceNumber(flowRateM3H, 3)
         },
         pump: {
@@ -618,6 +637,8 @@ function runPumpNpshEvaluation(pumpId, model = globalModel, connectionList = con
 }
 
 function getPumpOptimizationSourceFlow(context) {
+    const flowMode = context?.suctionBoundary?.props?.flowInputMode || 'Mass Flow';
+    if (flowMode === 'Solve from Network') return null;
     const sourceFlow = toPumpNumber(context?.suctionBoundary?.props?.flow, NaN);
     return Number.isFinite(sourceFlow) && sourceFlow > 0 ? sourceFlow : null;
 }
@@ -639,11 +660,16 @@ function getPumpOptimizationTargetFlow(pump, context) {
 
 function calculatePressureBoundaryHeadForOptimization(node, density, flowRateM3H, path, model) {
     if (!node || !node.props) return null;
-    const pressure = typeof getNodeAbsolutePressureBar === 'function'
-        ? getNodeAbsolutePressureBar(node)
-        : toPumpNumber(node.props.pressure, 1.013);
+    const sourceBoundary = node.type === 'source' && typeof resolveSourceBoundaryData === 'function'
+        ? resolveSourceBoundaryData(node, model)
+        : null;
+    const pressure = sourceBoundary
+        ? sourceBoundary.pressureAbsBar
+        : (typeof getNodeAbsolutePressureBar === 'function'
+            ? getNodeAbsolutePressureBar(node)
+            : toPumpNumber(node.props.pressure, 1.013));
     const pressureHead = pressureBarToHead(Number.isFinite(pressure) ? pressure : 1.013, density);
-    let boundaryHead = pressureHead + getNodeHydraulicElevation(node);
+    let boundaryHead = pressureHead + (sourceBoundary ? sourceBoundary.elevation : getNodeHydraulicElevation(node));
 
     if (node.type === 'sink' && node.props.pressureBasis === 'Static') {
         boundaryHead += getBoundaryPipeVelocityHead(node, flowRateM3H, path, model);

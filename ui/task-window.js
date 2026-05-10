@@ -1,17 +1,19 @@
 let taskWindowDragState = null;
+let pipePropertiesTaskNodeId = null;
 
 const FLUID_AUTO_NAMES = ['Water', 'Methanol', 'Palm Oil', 'Crude Oil'];
 
 const FLUID_TASK_FIELDS = [
     { key: 'density', label: 'Density', unit: 'kg/m3', digits: 3 },
     { key: 'viscosity', label: 'Kinematic Viscosity', unit: 'cSt', digits: 3 },
-    { key: 'vaporPressure', label: 'Vapor Pressure', unit: 'bar a', digits: 3 },
+    { key: 'vaporPressure', label: 'Vapor Pressure', unit: 'bar a', digits: 6 },
     { key: 'sg', label: 'Specific Gravity', unit: '', digits: 5 },
     { key: 'dynViscosity', label: 'Dynamic Viscosity', unit: 'cP', digits: 3 },
     { key: 'specificHeat', label: 'Specific Heat', unit: 'kJ/kg.K', digits: 3 },
     { key: 'bulkModulus', label: 'Bulk Modulus', unit: 'GPa', digits: 3 },
     { key: 'specVolume', label: 'Specific Volume', unit: 'm3/kg', digits: 8 },
     { key: 'specWeight', label: 'Specific Weight', unit: 'N/m3', digits: 3 },
+    { key: 'vaporPressureHead', label: 'Vapor Pressure Head', unit: 'm', digits: 3 },
     { key: 'speedOfSound', label: 'Speed of Sound', unit: 'm/s', digits: 3 }
 ];
 
@@ -22,15 +24,36 @@ function initTaskWindow() {
     const taskWindow = document.getElementById('taskWindow');
     const header = document.getElementById('taskWindowHeader');
     const closeButton = document.getElementById('taskWindowClose');
+    const minimizeButton = document.getElementById('taskWindowMinimize');
     if (!taskWindow || taskWindow.dataset.initialized === 'true') return;
 
     closeButton?.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         closeTaskWindow();
+    });
+
+    minimizeButton?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isTaskWindowMinimized()) {
+            restoreTaskWindow();
+        } else {
+            minimizeTaskWindow();
+        }
+    });
+
+    header?.addEventListener('click', (e) => {
+        if (!isTaskWindowMinimized() || e.target.closest('button')) return;
+        restoreTaskWindow();
     });
 
     header?.addEventListener('pointerdown', (e) => {
         if (e.target.closest('button')) return;
+        if (isTaskWindowMinimized()) {
+            restoreTaskWindow();
+            return;
+        }
         const rect = taskWindow.getBoundingClientRect();
         taskWindowDragState = {
             pointerId: e.pointerId,
@@ -42,12 +65,15 @@ function initTaskWindow() {
 
     header?.addEventListener('pointermove', (e) => {
         if (!taskWindowDragState || taskWindowDragState.pointerId !== e.pointerId) return;
+        taskWindow.classList.add('task-window-user-positioned');
         const width = taskWindow.offsetWidth;
         const height = taskWindow.offsetHeight;
         const maxLeft = Math.max(8, window.innerWidth - width - 8);
         const maxTop = Math.max(8, window.innerHeight - height - 8);
         taskWindow.style.left = `${Math.max(8, Math.min(maxLeft, e.clientX - taskWindowDragState.offsetX))}px`;
         taskWindow.style.top = `${Math.max(8, Math.min(maxTop, e.clientY - taskWindowDragState.offsetY))}px`;
+        taskWindow.style.right = '';
+        taskWindow.style.bottom = '';
         taskWindow.style.transform = 'none';
     });
 
@@ -62,7 +88,76 @@ function initTaskWindow() {
         if (e.key === 'Escape' && !taskWindow.hidden) closeTaskWindow();
     });
 
+    window.addEventListener('resize', clampTaskWindowToViewport);
+    window.addEventListener('orientationchange', () => {
+        window.setTimeout(clampTaskWindowToViewport, 120);
+    });
+
     taskWindow.dataset.initialized = 'true';
+    updateTaskWindowMinimizeButton();
+}
+
+function resetTaskWindowPlacement(taskWindow) {
+    if (!taskWindow) return;
+    taskWindow.classList.remove('task-window-user-positioned');
+    taskWindow.style.left = '';
+    taskWindow.style.top = '';
+    taskWindow.style.right = '';
+    taskWindow.style.bottom = '';
+    taskWindow.style.transform = '';
+}
+
+function clampTaskWindowToViewport() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow || taskWindow.hidden || isTaskWindowMinimized()) return;
+    if (!taskWindow.classList.contains('task-window-user-positioned')) return;
+
+    const width = taskWindow.offsetWidth;
+    const height = taskWindow.offsetHeight;
+    const rect = taskWindow.getBoundingClientRect();
+    const margin = window.innerWidth <= 640 ? 6 : 8;
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - height - margin);
+    taskWindow.style.left = `${Math.max(margin, Math.min(maxLeft, rect.left))}px`;
+    taskWindow.style.top = `${Math.max(margin, Math.min(maxTop, rect.top))}px`;
+    taskWindow.style.right = '';
+    taskWindow.style.bottom = '';
+}
+
+function isTaskWindowMinimized() {
+    const taskWindow = document.getElementById('taskWindow');
+    return !!taskWindow?.classList.contains('task-window-minimized');
+}
+
+function updateTaskWindowMinimizeButton() {
+    const minimizeButton = document.getElementById('taskWindowMinimize');
+    if (!minimizeButton) return;
+    const minimized = isTaskWindowMinimized();
+    minimizeButton.textContent = minimized ? '^' : '_';
+    minimizeButton.setAttribute('aria-label', minimized ? 'Restore task window' : 'Minimize task window');
+    minimizeButton.title = minimized ? 'Restore' : 'Minimize';
+}
+
+function setTaskWindowMinimized(minimized) {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow) return;
+    taskWindow.classList.toggle('task-window-minimized', minimized);
+    taskWindow.setAttribute('aria-expanded', minimized ? 'false' : 'true');
+    updateTaskWindowMinimizeButton();
+}
+
+function minimizeTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow || taskWindow.hidden) return;
+    taskWindowDragState = null;
+    setTaskWindowMinimized(true);
+}
+
+function restoreTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow) return;
+    taskWindow.hidden = false;
+    setTaskWindowMinimized(false);
 }
 
 function openTaskWindow(title, content, options = {}) {
@@ -72,9 +167,14 @@ function openTaskWindow(title, content, options = {}) {
     if (!taskWindow || !taskTitle || !taskBody) return;
 
     initTaskWindow();
+    const shouldPreserveMinimized = options.preserveMinimized === true && isTaskWindowMinimized();
     taskTitle.textContent = title;
     taskBody.replaceChildren();
     taskBody.className = `task-window-body${options.bodyClass ? ` ${options.bodyClass}` : ''}`;
+    if (options.resetScroll) {
+        taskBody.scrollTop = 0;
+        taskBody.scrollLeft = 0;
+    }
 
     if (content instanceof Node) {
         taskBody.appendChild(content);
@@ -83,12 +183,14 @@ function openTaskWindow(title, content, options = {}) {
     }
 
     taskWindow.hidden = false;
+    taskWindow.dataset.kind = options.kind || '';
     taskWindow.classList.toggle('task-window-fluid-active', options.kind === 'fluid');
+    taskWindow.classList.toggle('task-window-pipe-active', options.kind === 'pipe');
+    document.body.classList.toggle('pipe-properties-task-open', options.kind === 'pipe');
     if (options.kind !== 'fluid') closeTabletFluidBottomDock();
-    if (!taskWindow.style.left || !taskWindow.style.top) {
-        taskWindow.style.left = '50%';
-        taskWindow.style.top = '50%';
-        taskWindow.style.transform = 'translate(-50%, -50%)';
+    setTaskWindowMinimized(shouldPreserveMinimized);
+    if (options.resetPosition && !shouldPreserveMinimized) {
+        resetTaskWindowPlacement(taskWindow);
     }
 }
 
@@ -96,9 +198,100 @@ function closeTaskWindow() {
     const taskWindow = document.getElementById('taskWindow');
     if (taskWindow) {
         taskWindow.hidden = true;
-        taskWindow.classList.remove('task-window-fluid-active');
+        taskWindow.classList.remove('task-window-fluid-active', 'task-window-pipe-active', 'task-window-minimized');
+        delete taskWindow.dataset.kind;
+        updateTaskWindowMinimizeButton();
     }
+    document.body.classList.remove('pipe-properties-task-open');
+    pipePropertiesTaskNodeId = null;
     closeTabletFluidBottomDock();
+}
+
+function closePipePropertiesTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (taskWindow?.dataset.kind === 'pipe') closeTaskWindow();
+}
+
+function createPipePropertiesTaskRoot(nodeId) {
+    const root = document.createElement('div');
+    root.className = 'pipe-properties-task';
+    root.dataset.pipeNode = nodeId;
+
+    const table = document.createElement('table');
+    table.className = 'prop-table pipe-task-prop-table';
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headerCell = document.createElement('th');
+    headerCell.colSpan = 2;
+    headerCell.id = 'pipeTaskPropTableHeader';
+    headerCell.textContent = 'Pipe Object Properties';
+    headerRow.appendChild(headerCell);
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement('tbody');
+    tbody.id = 'pipeTaskPropTableBody';
+
+    table.append(thead, tbody);
+    root.appendChild(table);
+    return root;
+}
+
+function openPipePropertiesTaskWindow(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node || node.type !== 'pipe') return false;
+
+    const taskWindow = document.getElementById('taskWindow');
+    const previousPipeTaskNodeId = pipePropertiesTaskNodeId;
+    const wasPipeTask = taskWindow?.dataset.kind === 'pipe';
+    const preserveMinimized = wasPipeTask && isTaskWindowMinimized();
+    pipePropertiesTaskNodeId = nodeId;
+    openTaskWindow(
+        `Pipe Object Properties - ${node.name || nodeId}`,
+        createPipePropertiesTaskRoot(nodeId),
+        {
+            kind: 'pipe',
+            bodyClass: 'pipe-properties-task-body',
+            preserveMinimized,
+            resetPosition: !wasPipeTask,
+            resetScroll: !wasPipeTask || previousPipeTaskNodeId !== nodeId
+        }
+    );
+    return true;
+}
+
+function getPipePropertiesTaskTargets() {
+    const header = document.getElementById('pipeTaskPropTableHeader');
+    const body = document.getElementById('pipeTaskPropTableBody');
+    if (!header || !body) return null;
+    return { header, body };
+}
+
+function showPipePropertiesTaskNotice(nodeId) {
+    const header = document.getElementById('propTableHeader');
+    const body = document.getElementById('propTableBody');
+    const hint = document.getElementById('editorHint');
+    const node = globalModel?.[nodeId];
+    if (!header || !body || !node) return;
+
+    header.textContent = node.name || nodeId;
+    body.innerHTML = `
+        <tr>
+            <td colspan="2" class="pipe-task-sidebar-cell">
+                <div class="pipe-task-sidebar-notice">
+                    <strong>Pipe Object Properties</strong>
+                    <span>Active in Task Window</span>
+                    <button type="button" class="pipe-task-restore-button" data-open-pipe-task="${nodeId}">Show Window</button>
+                </div>
+            </td>
+        </tr>
+    `;
+    hint.style.display = 'none';
+
+    body.querySelector('[data-open-pipe-task]')?.addEventListener('click', () => {
+        if (isTaskWindowMinimized()) restoreTaskWindow();
+        if (typeof renderSidebar === 'function') renderSidebar(nodeId);
+    });
 }
 
 function isFluidAuto(fluidName) {
@@ -143,6 +336,7 @@ function recalcManualFluidProperties(props, changedKey) {
     const density = parseFloat(props.density);
     const dynamicViscosity = parseFloat(props.dynViscosity);
     const kinematicViscosity = parseFloat(props.viscosity);
+    const isBasic = props.inputMode !== 'Advanced';
 
     if (changedKey === 'sg') {
         props.density = parseFloat(props.sg) * densityRef;
@@ -152,8 +346,10 @@ function recalcManualFluidProperties(props, changedKey) {
 
     const updatedDensity = parseFloat(props.density);
     if (Number.isFinite(updatedDensity) && updatedDensity > 0) {
-        if (changedKey === 'viscosity' && Number.isFinite(kinematicViscosity)) {
-            props.dynViscosity = kinematicViscosity * (updatedDensity / 1000);
+        if (isBasic) {
+            if (Number.isFinite(kinematicViscosity)) {
+                props.dynViscosity = kinematicViscosity * (updatedDensity / 1000);
+            }
         } else if (Number.isFinite(dynamicViscosity)) {
             props.viscosity = dynamicViscosity / (updatedDensity / 1000);
         } else if (Number.isFinite(kinematicViscosity)) {
@@ -421,7 +617,7 @@ function renderFluidEquationCard(card, trace) {
         substitution.textContent = step.substitution || '-';
         const result = document.createElement('strong');
         result.className = 'fluid-equation-result';
-        result.textContent = formatFluidTaskValue(step.result, step.unit || '', 3);
+        result.textContent = formatFluidTaskValue(step.result, step.unit || '', step.digits ?? 3);
         item.append(title, reference, formula, substitution, result);
         steps.appendChild(item);
     });

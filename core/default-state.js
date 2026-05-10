@@ -16,6 +16,7 @@ window.DEFAULT_SIMULATION_STATE = {
                 bulkModulus: 2.233493550571319,
                 specVolume: 0.001002961732556789,
                 specWeight: 9781.031201451691,
+                vaporPressureHead: 0.32407876235416877,
                 speedOfSound: 1496.6992220000063
             }
         }

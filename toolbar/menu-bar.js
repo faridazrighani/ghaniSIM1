@@ -175,6 +175,7 @@ function clearSimulationCanvas() {
             bulkModulus: 2.2,
             specVolume: 0.001,
             specWeight: 9780,
+            vaporPressureHead: 0.3241119893830319,
             speedOfSound: 1482
         } 
     };

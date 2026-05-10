@@ -94,8 +94,104 @@ function getHydraulicPortRole(portSelector = '') {
     return '';
 }
 
+function isHydraulicConnectionEdge(conn, model = globalModel) {
+    if (!conn || conn.connectionType === 'semantic') return false;
+    if (!conn.pipeId) return false;
+    return !model || !model[conn.pipeId] || model[conn.pipeId].type === 'pipe';
+}
+
+function getSourceLinkForSource(sourceId) {
+    if (typeof sourceLinks === 'undefined' || !Array.isArray(sourceLinks)) return null;
+    return sourceLinks.find(link => link.sourceId === sourceId) || null;
+}
+
+function getSourceLiteral(name, fallback) {
+    return typeof window !== 'undefined' && window[name] ? window[name] : fallback;
+}
+
+function getSourceTypeValue(source, link = null, model = globalModel) {
+    const explicitType = source?.props?.sourceType;
+    if (explicitType) return explicitType;
+    const targetNode = link ? model[link.targetId] : null;
+    if (targetNode?.type === 'tank') return 'Open Tank / Reservoir';
+    if (targetNode?.type === 'separator' || targetNode?.type === 'verticalVessel') return 'Pressurized Vessel';
+    return 'Standalone Boundary Source';
+}
+
+function isSemanticSourceAttachmentType(sourceType) {
+    return sourceType === 'Open Tank / Reservoir' || sourceType === 'Pressurized Vessel';
+}
+
+function isStorageBoundaryNode(node) {
+    return !!(node && (node.type === 'tank' || node.type === 'separator' || node.type === 'verticalVessel'));
+}
+
+function getSourceBoundaryDataSource(source, link = null, model = globalModel) {
+    if (source?.props?.boundaryDataSource) return source.props.boundaryDataSource;
+    const attachedNode = link ? model?.[link.targetId] : null;
+    return isStorageBoundaryNode(attachedNode) ? 'Inherit from Attached Equipment' : 'Manual';
+}
+
+function isSourceInheritMode(source, link = null, model = globalModel) {
+    return getSourceBoundaryDataSource(source, link, model) === 'Inherit from Attached Equipment';
+}
+
+function getNodeAbsolutePressureForHydraulics(node) {
+    if (!node || !node.props) return null;
+    if (typeof getNodeAbsolutePressureBar === 'function') return getNodeAbsolutePressureBar(node);
+    const pressure = toHydraulicNumber(node.props.pressure, NaN);
+    const basis = node.props.pressureInputBasis || 'Absolute';
+    if (!Number.isFinite(pressure)) return null;
+    return basis === 'Gauge' ? pressure + 1.013 : pressure;
+}
+
+function hasFiniteProp(props, key) {
+    return Number.isFinite(parseFloat(props?.[key]));
+}
+
+function getStorageLiquidLevelElevation(node) {
+    if (!node || !node.props) return null;
+    const baseElevation = toHydraulicNumber(node.props.elevation, 0);
+    if (!hasFiniteProp(node.props, 'liquidLevel')) return null;
+    return baseElevation + toHydraulicNumber(node.props.liquidLevel, 0);
+}
+
+function getStorageNozzleElevation(node, portSelector = '') {
+    if (!node || !node.props) return 0;
+    const role = getHydraulicPortRole(portSelector);
+    if (role === 'inlet' && hasFiniteProp(node.props, 'inletNozzleElevation')) {
+        return toHydraulicNumber(node.props.inletNozzleElevation, 0);
+    }
+    if (role === 'outlet' && hasFiniteProp(node.props, 'outletNozzleElevation')) {
+        return toHydraulicNumber(node.props.outletNozzleElevation, 0);
+    }
+    return toHydraulicNumber(node.props.elevation, 0);
+}
+
+function getPumpPortElevation(node, portSelector = '') {
+    if (!node || !node.props) return 0;
+    const role = getHydraulicPortRole(portSelector);
+    if (role === 'inlet' && hasFiniteProp(node.props, 'suctionElevation')) {
+        return toHydraulicNumber(node.props.suctionElevation, 0);
+    }
+    if (role === 'outlet' && hasFiniteProp(node.props, 'dischargeElevation')) {
+        return toHydraulicNumber(node.props.dischargeElevation, 0);
+    }
+    return toHydraulicNumber(node.props.elevation, 0);
+}
+
+function getNodePortHydraulicElevation(nodeId, portSelector = '', model = globalModel) {
+    const node = model ? model[nodeId] : null;
+    if (!node || !node.props) return 0;
+    if (node.type === 'pump') return getPumpPortElevation(node, portSelector);
+    if (node.type === 'tank' || node.type === 'separator' || node.type === 'verticalVessel') {
+        return getStorageNozzleElevation(node, portSelector);
+    }
+    return getNodeHydraulicElevation(node);
+}
+
 function orientHydraulicConnection(conn, model = globalModel) {
-    if (!conn) return null;
+    if (!isHydraulicConnectionEdge(conn, model)) return null;
     const fromRole = getHydraulicPortRole(conn.fromPort);
     const toRole = getHydraulicPortRole(conn.toPort);
 
@@ -144,7 +240,14 @@ function orientHydraulicConnection(conn, model = globalModel) {
 function getAttachedSourceBoundaryIds(nodeId, model) {
     if (typeof sourceLinks === 'undefined' || !Array.isArray(sourceLinks)) return [];
     return sourceLinks
-        .filter(item => item.targetId === nodeId && model[item.sourceId]?.type === 'source')
+        .filter(item => {
+            const source = model[item.sourceId];
+            return item.targetId === nodeId
+                && item.connectionType !== 'hydraulic'
+                && source?.type === 'source'
+                && isSemanticSourceAttachmentType(getSourceTypeValue(source, item, model))
+                && isStorageBoundaryNode(model[item.targetId]);
+        })
         .map(item => item.sourceId);
 }
 
@@ -161,9 +264,85 @@ function getNodeHydraulicElevation(node) {
     return toHydraulicNumber(node.props.elevation);
 }
 
+function resolveSourceBoundaryData(sourceIdOrNode, model = globalModel) {
+    const sourceId = typeof sourceIdOrNode === 'string'
+        ? sourceIdOrNode
+        : Object.keys(model || {}).find(nodeId => model[nodeId] === sourceIdOrNode);
+    const source = typeof sourceIdOrNode === 'string' ? model?.[sourceIdOrNode] : sourceIdOrNode;
+    if (!source || source.type !== 'source') return null;
+
+    const rawLink = sourceId ? getSourceLinkForSource(sourceId) : null;
+    const sourceType = getSourceTypeValue(source, rawLink, model);
+    const link = rawLink && isSemanticSourceAttachmentType(sourceType) ? rawLink : null;
+    const attachedNode = link ? model?.[link.targetId] : null;
+    const useInherited = !!(link && isStorageBoundaryNode(attachedNode) && isSourceInheritMode(source, link, model));
+    const pressureNode = useInherited ? attachedNode : source;
+    const pressureAbsBar = getNodeAbsolutePressureForHydraulics(pressureNode);
+    const warnings = [];
+
+    if (rawLink && !link) {
+        warnings.push(`${sourceType} uses a solid hydraulic connection. Dashed attachment is ignored for calculations.`);
+    } else if (rawLink && !isStorageBoundaryNode(model?.[rawLink.targetId])) {
+        warnings.push('Dashed SRC attachment is only valid to tank/vessel boundaries. This attachment is ignored for hydraulic calculations.');
+    }
+
+    let elevation = toHydraulicNumber(source.props?.elevation, 0);
+    if (useInherited) {
+        const inheritedElevation = getStorageLiquidLevelElevation(attachedNode);
+        if (Number.isFinite(inheritedElevation)) {
+            elevation = inheritedElevation;
+        } else {
+            warnings.push('Attached tank/vessel does not define liquid level elevation. Source elevation cannot be inherited.');
+        }
+    } else if (link && attachedNode && source.props?.boundaryDataSource === 'Inherit from Attached Equipment') {
+        warnings.push('Boundary inheritance is only available for attached tank/vessel liquid level sources. Select Manual or attach SRC to a tank/vessel.');
+    } else if (link && attachedNode && hasFiniteProp(source.props, 'pressure') && hasFiniteProp(attachedNode.props, 'pressure')) {
+        warnings.push('SRC pressure and attached equipment pressure are both defined. Select manual or inherited boundary data.');
+    }
+
+    if (!Number.isFinite(pressureAbsBar)) {
+        warnings.push('Source boundary pressure is missing or invalid.');
+    }
+    if (!Number.isFinite(elevation)) {
+        warnings.push('Pump suction elevation or source elevation is missing. NPSH may be invalid.');
+    }
+
+    return {
+        sourceId,
+        source,
+        sourceType,
+        boundaryDataSource: getSourceBoundaryDataSource(source, link, model),
+        pressureEnergyBasis: source.props?.pressureEnergyBasis || 'Static Pressure',
+        attachedEquipmentId: link?.targetId || '',
+        attachedEquipment: attachedNode || null,
+        isInherited: useInherited,
+        pressureAbsBar,
+        elevation,
+        warnings
+    };
+}
+
+function getSourceVelocityHeadForBoundary(source, flowRateM3H, path, model) {
+    const sourceId = Object.keys(model || {}).find(nodeId => model[nodeId] === source) || source?.name;
+    const sourceType = getSourceTypeValue(source, getSourceLinkForSource(sourceId), model);
+    const isExternalHeader = sourceType === 'External Header / Pipe Tie-in';
+    const isStaticBasis = (source?.props?.pressureEnergyBasis || 'Static Pressure') === 'Static Pressure';
+    if (!isExternalHeader || !isStaticBasis || !path?.steps?.length) return 0;
+
+    const firstStep = path.steps[0];
+    return getPipeVelocityHead(firstStep.pipeId, flowRateM3H, model, 'inlet');
+}
+
 function getBoundaryHydraulicHead(node, density, flowRateM3H = 0, path = null, model = globalModel) {
     if (!node || !node.props) return null;
     if (isSinkFlowDemandBoundary(node)) return null;
+
+    if (node.type === 'source') {
+        const boundary = resolveSourceBoundaryData(node, model);
+        if (!boundary || !Number.isFinite(boundary.pressureAbsBar)) return null;
+        const velocityHead = getSourceVelocityHeadForBoundary(node, flowRateM3H, path, model);
+        return pressureBarToHead(boundary.pressureAbsBar, density) + boundary.elevation + velocityHead;
+    }
 
     const boundaryPressure = typeof getNodeAbsolutePressureBar === 'function'
         ? getNodeAbsolutePressureBar(node)
@@ -180,9 +359,12 @@ function getBoundaryHydraulicHead(node, density, flowRateM3H = 0, path = null, m
 
 function getBoundaryAbsolutePressureWarnings(node, label) {
     if (!node || !node.props || node.props.pressureInputBasis !== PRESSURE_INPUT_BASIS_ABSOLUTE) return [];
-    const absolutePressure = typeof getNodeAbsolutePressureBar === 'function'
-        ? getNodeAbsolutePressureBar(node)
-        : toHydraulicNumber(node.props.pressure, NaN);
+    const sourceBoundary = node.type === 'source' ? resolveSourceBoundaryData(node, globalModel) : null;
+    const absolutePressure = sourceBoundary
+        ? sourceBoundary.pressureAbsBar
+        : (typeof getNodeAbsolutePressureBar === 'function'
+            ? getNodeAbsolutePressureBar(node)
+            : toHydraulicNumber(node.props.pressure, NaN));
     if (Number.isFinite(absolutePressure) && absolutePressure <= 0) {
         return [`${label} pressure is 0 bar a/vacuum absolute; use 0 bar g or 1.013 bar a for atmospheric service.`];
     }
@@ -197,12 +379,14 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
     const visitedPipes = new Set();
     let currentId = startNodeId;
     let boundaryId = null;
+    let boundaryAttachmentTargetId = null;
     const hydraulicConnections = (connectionList || [])
         .map(conn => orientHydraulicConnection(conn, model))
         .filter(Boolean);
     const finalize = (overrides = {}) => ({
         direction,
         boundaryId,
+        boundaryAttachmentTargetId,
         steps: reverseSearch ? traversed.slice().reverse() : traversed.slice(),
         isComplete: !!boundaryId && !overrides.isUnsupported,
         warnings: [...warnings, ...(overrides.warnings || [])],
@@ -211,7 +395,7 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
     });
 
     for (let stepCount = 0; stepCount < 80; stepCount++) {
-        if (reverseSearch) {
+        if (reverseSearch && currentId !== startNodeId) {
             const attachedSourceIds = getAttachedSourceBoundaryIds(currentId, model) || [];
             if (attachedSourceIds.length > 1) {
                 return finalize({
@@ -222,6 +406,7 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
             }
             if (attachedSourceIds.length === 1) {
                 boundaryId = attachedSourceIds[0];
+                boundaryAttachmentTargetId = currentId;
                 return finalize();
             }
         }
@@ -273,6 +458,7 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
             }
             if (attachedSourceIds.length === 1) {
                 boundaryId = attachedSourceIds[0];
+                boundaryAttachmentTargetId = nextId;
                 return finalize();
             }
         }
@@ -421,15 +607,15 @@ function calculateHydraulicEquipmentLossHead(node, flowRateM3H, density, model) 
     return 0;
 }
 
-function calculateHydraulicPipeLossHead(pipeId, flowRateM3H, model) {
+function calculateHydraulicPipeLossHead(pipeId, flowRateM3H, model, fluidProps = null) {
     const pipe = model[pipeId];
     if (!pipe || pipe.type !== 'pipe' || !pipe.props || typeof calculatePipeHeadLoss !== 'function') {
         return 0;
     }
-    return calculatePipeHeadLoss(flowRateM3H, pipe.props);
+    return calculatePipeHeadLoss(flowRateM3H, pipe.props, fluidProps);
 }
 
-function calculateHydraulicPipeLossBreakdown(pipeId, flowRateM3H, model) {
+function calculateHydraulicPipeLossBreakdown(pipeId, flowRateM3H, model, fluidProps = null) {
     const pipe = model[pipeId];
     if (!pipe || pipe.type !== 'pipe' || !pipe.props || typeof calculatePipeHydraulicSegments !== 'function') {
         return {
@@ -443,7 +629,7 @@ function calculateHydraulicPipeLossBreakdown(pipeId, flowRateM3H, model) {
         };
     }
 
-    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props);
+    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props, fluidProps);
     const majorLoss = details.reduce((sum, segment) => sum + segment.majorLoss, 0);
     const minorLoss = details.reduce((sum, segment) => sum + segment.minorLoss, 0);
     return {
@@ -488,14 +674,14 @@ function calculateHydraulicPathEntryLossHead(path, flowRateM3H, model, density, 
         : 0;
 }
 
-function calculateHydraulicPathLossHead(path, flowRateM3H, model, density, terminalNodeId) {
+function calculateHydraulicPathLossHead(path, flowRateM3H, model, density, terminalNodeId, fluidProps = null) {
     if (!path || !path.isComplete) return null;
 
-    const breakdown = calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, terminalNodeId);
+    const breakdown = calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, terminalNodeId, fluidProps);
     return breakdown ? breakdown.totalHeadLoss : null;
 }
 
-function calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, terminalNodeId) {
+function calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, terminalNodeId, fluidProps = null) {
     if (!path || !path.isComplete) return null;
 
     const entries = [];
@@ -509,7 +695,7 @@ function calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, 
 
     path.steps.forEach(step => {
         entries.push({
-            ...calculateHydraulicPipeLossBreakdown(step.pipeId, flowRateM3H, model),
+            ...calculateHydraulicPipeLossBreakdown(step.pipeId, flowRateM3H, model, fluidProps),
             role: 'pipe'
         });
 
@@ -533,14 +719,108 @@ function calculateHydraulicPathLossBreakdown(path, flowRateM3H, model, density, 
     };
 }
 
+function getFluidPropsAtSourceTemperature(source, baseFluidProps = {}) {
+    const base = {
+        density: toHydraulicNumber(baseFluidProps.density, 1000),
+        viscosity: toHydraulicNumber(baseFluidProps.viscosity, 1),
+        vaporPressure: toHydraulicNumber(baseFluidProps.vaporPressure, 0),
+        temp: toHydraulicNumber(baseFluidProps.temp, 25)
+    };
+    const warnings = [];
+    if (!source || source.type !== 'source' || source.props?.temperatureMode !== 'Custom') {
+        return { ...base, warnings };
+    }
+
+    const temp = toHydraulicNumber(source.props.temp, base.temp);
+    const fluidName = baseFluidProps.fluidName || 'Custom';
+    let calculated = null;
+    if (fluidName === 'Water' && typeof calculateIapwsWaterProperties === 'function') {
+        calculated = calculateIapwsWaterProperties(temp);
+    } else if (fluidName === 'Methanol' && typeof calculateMethanolProperties === 'function') {
+        calculated = calculateMethanolProperties(temp);
+    } else if (fluidName === 'Palm Oil' && typeof calculatePalmOilProperties === 'function') {
+        calculated = calculatePalmOilProperties(temp);
+    } else if (fluidName === 'Crude Oil' && typeof calculateCrudeOilProperties === 'function') {
+        calculated = calculateCrudeOilProperties(temp, baseFluidProps);
+    }
+
+    if (!calculated) {
+        warnings.push('SRC uses custom temperature but fluid properties were not recalculated.');
+        return { ...base, temp, warnings };
+    }
+
+    return {
+        ...base,
+        density: calculated.density,
+        viscosity: calculated.kinematicViscosity,
+        vaporPressure: calculated.vaporPressure,
+        temp,
+        warnings
+    };
+}
+
+function getSemanticAttachmentWarningsForMissingPath(model, suctionPath) {
+    if (suctionPath?.boundaryId || typeof sourceLinks === 'undefined' || !Array.isArray(sourceLinks)) return [];
+    const activeLinks = sourceLinks.filter(link => {
+        const source = model[link.sourceId];
+        return source?.type === 'source'
+            && model[link.targetId]
+            && isSemanticSourceAttachmentType(getSourceTypeValue(source, link, model))
+            && isStorageBoundaryNode(model[link.targetId]);
+    });
+    if (!activeLinks.length) return [];
+    return activeLinks.map(link => (
+        `${link.sourceId} is attached to ${link.targetId}, but no hydraulic path exists from the equipment outlet to the pump suction. Add pipe/hydraulic components to calculate flow and pressure loss.`
+    ));
+}
+
+function getInvalidSemanticAttachmentWarnings(model) {
+    if (typeof sourceLinks === 'undefined' || !Array.isArray(sourceLinks)) return [];
+    return sourceLinks
+        .filter(link => {
+            const source = model[link.sourceId];
+            const target = model[link.targetId];
+            return source?.type === 'source'
+                && target
+                && link.connectionType !== 'hydraulic'
+                && (
+                    !isSemanticSourceAttachmentType(getSourceTypeValue(source, link, model))
+                    || !isStorageBoundaryNode(target)
+                );
+        })
+        .map(link => `${link.sourceId} dashed attachment to ${link.targetId} is not a hydraulic path and is only valid for tank/vessel boundary inheritance. Use a solid hydraulic pipe for flow.`);
+}
+
+function getSourceBoundaryWarnings(sourceBoundary, model) {
+    if (!sourceBoundary || sourceBoundary.type !== 'source') return [];
+    const boundary = resolveSourceBoundaryData(sourceBoundary, model);
+    return boundary?.warnings || [];
+}
+
+function getPumpElevationWarnings(pump) {
+    if (!pump || pump.type !== 'pump') return [];
+    if (!hasFiniteProp(pump.props, 'suctionElevation') && !hasFiniteProp(pump.props, 'elevation')) {
+        return ['Pump suction elevation or source elevation is missing. NPSH may be invalid.'];
+    }
+    return [];
+}
+
 function createPumpHydraulicContext(pumpId, model, connectionList, density, vaporPressurePa) {
     const suctionPath = traceHydraulicPath(pumpId, 'upstream', model, connectionList);
     const dischargePath = traceHydraulicPath(pumpId, 'downstream', model, connectionList);
     const suctionBoundary = suctionPath.boundaryId ? model[suctionPath.boundaryId] : null;
     const dischargeBoundary = dischargePath.boundaryId ? model[dischargePath.boundaryId] : null;
+    const fluidProps = getFluidPropsAtSourceTemperature(suctionBoundary, model.FLUID?.props || {});
+    const contextDensity = Math.max(toHydraulicNumber(fluidProps.density, density), 1);
+    const contextVaporPressurePa = toHydraulicNumber(fluidProps.vaporPressure, vaporPressurePa / 100000) * 100000;
     const networkWarnings = [
         ...(suctionPath.warnings || []),
         ...(dischargePath.warnings || []),
+        ...getInvalidSemanticAttachmentWarnings(model),
+        ...getSemanticAttachmentWarningsForMissingPath(model, suctionPath),
+        ...getSourceBoundaryWarnings(suctionBoundary, model),
+        ...getPumpElevationWarnings(model[pumpId]),
+        ...(fluidProps.warnings || []),
         ...getBoundaryAbsolutePressureWarnings(suctionBoundary, suctionPath.boundaryId || 'Suction boundary'),
         ...getBoundaryAbsolutePressureWarnings(dischargeBoundary, dischargePath.boundaryId || 'Discharge boundary')
     ];
@@ -549,8 +829,9 @@ function createPumpHydraulicContext(pumpId, model, connectionList, density, vapo
     return {
         pumpId,
         pump: model[pumpId],
-        density,
-        vaporPressurePa,
+        density: contextDensity,
+        vaporPressurePa: contextVaporPressurePa,
+        fluidProps,
         suctionPath,
         dischargePath,
         suctionBoundary,
@@ -575,14 +856,16 @@ function calculatePumpSystemHead(context, flowRateM3H) {
         flowRateM3H,
         globalModel,
         context.density,
-        context.pumpId
+        context.pumpId,
+        context.fluidProps
     );
     const dischargeLoss = calculateHydraulicPathLossHead(
         context.dischargePath,
         flowRateM3H,
         globalModel,
         context.density,
-        context.dischargePath.boundaryId
+        context.dischargePath.boundaryId,
+        context.fluidProps
     );
     if (suctionLoss === null || dischargeLoss === null) return null;
 
@@ -599,20 +882,22 @@ function calculatePumpHydraulicSnapshot(context, flowRateM3H, pumpHead) {
         flowRateM3H,
         globalModel,
         context.density,
-        context.pumpId
+        context.pumpId,
+        context.fluidProps
     );
     const dischargeLossBreakdown = calculateHydraulicPathLossBreakdown(
         context.dischargePath,
         flowRateM3H,
         globalModel,
         context.density,
-        context.dischargePath.boundaryId
+        context.dischargePath.boundaryId,
+        context.fluidProps
     );
     if ([suctionBoundaryHead, dischargeBoundaryHead, suctionLossBreakdown, dischargeLossBreakdown].some(value => value === null)) {
         return null;
     }
 
-    const pumpElevation = getNodeHydraulicElevation(context.pump);
+    const pumpElevation = getPumpPortElevation(context.pump, '.port.inlet');
     const suctionLoss = suctionLossBreakdown.totalHeadLoss;
     const dischargeLoss = dischargeLossBreakdown.totalHeadLoss;
     const suctionHeadAtPump = suctionBoundaryHead - suctionLoss;
@@ -651,21 +936,23 @@ function calculatePumpFlowDemandSnapshot(context, flowRateM3H, pumpHead) {
         flowRateM3H,
         globalModel,
         context.density,
-        context.pumpId
+        context.pumpId,
+        context.fluidProps
     );
     const dischargeLossBreakdown = calculateHydraulicPathLossBreakdown(
         context.dischargePath,
         flowRateM3H,
         globalModel,
         context.density,
-        context.dischargePath.boundaryId
+        context.dischargePath.boundaryId,
+        context.fluidProps
     );
     if ([suctionBoundaryHead, suctionLossBreakdown, dischargeLossBreakdown].some(value => value === null)) {
         return null;
     }
 
-    const pumpElevation = getNodeHydraulicElevation(context.pump);
-    const boundaryElevation = getNodeHydraulicElevation(context.dischargeBoundary);
+    const pumpElevation = getPumpPortElevation(context.pump, '.port.inlet');
+    const boundaryElevation = getNodePortHydraulicElevation(context.dischargePath.boundaryId, '.port.inlet', globalModel);
     const terminalVelocityHead = getBoundaryPipeVelocityHead(context.dischargeBoundary, flowRateM3H, context.dischargePath, globalModel);
     const suctionLoss = suctionLossBreakdown.totalHeadLoss;
     const dischargeLoss = dischargeLossBreakdown.totalHeadLoss;
@@ -712,7 +999,14 @@ function resetHydraulicPipeResults(model) {
             inletPressure: null,
             outletPressure: null,
             hydraulicHead: null,
-            pressureCalculated: false
+            pressureCalculated: false,
+            highPointPressure: null,
+            highPointVaporMargin: null,
+            highPointSegment: '',
+            highPointLocationPercent: null,
+            vaporPressure: null,
+            segmentProfiles: [],
+            warnings: []
         };
     });
 
@@ -722,17 +1016,177 @@ function resetHydraulicPipeResults(model) {
     };
 }
 
-function setPipeHydraulicResult(model, step, flowRateM3H, inletHead, outletHead, density) {
+function getPipeElevationProfileMode(pipe) {
+    return pipe?.props?.elevationProfileMode || 'End Elevations';
+}
+
+function getPipeEndpointElevation(pipe, endpointKey, nodeId, portSelector, model) {
+    if (getPipeElevationProfileMode(pipe) === 'Ignore') {
+        return getNodePortHydraulicElevation(nodeId, portSelector, model);
+    }
+    const override = toHydraulicNumber(pipe?.props?.[endpointKey], NaN);
+    if (Number.isFinite(override)) return override;
+    return getNodePortHydraulicElevation(nodeId, portSelector, model);
+}
+
+function getPipeSegmentElevationProfile(pipe, fromElevation, toElevation, details) {
+    const mode = getPipeElevationProfileMode(pipe);
+    const segments = Array.isArray(pipe?.props?.segments) ? pipe.props.segments : [];
+    const totalLength = details.reduce((sum, detail) => sum + Math.max(toHydraulicNumber(detail.length, 0), 0), 0);
+    const count = Math.max(details.length, 1);
+    let cumulativeLength = 0;
+
+    return details.map((detail, index) => {
+        const segmentLength = Math.max(toHydraulicNumber(detail.length, 0), 0);
+        const startFraction = totalLength > 0 ? cumulativeLength / totalLength : index / count;
+        cumulativeLength += segmentLength;
+        const endFraction = totalLength > 0 ? cumulativeLength / totalLength : (index + 1) / count;
+        const defaultStartElevation = fromElevation + ((toElevation - fromElevation) * startFraction);
+        const defaultEndElevation = fromElevation + ((toElevation - fromElevation) * endFraction);
+        const segment = segments[index] || {};
+        const startOverride = toHydraulicNumber(segment.startElevation, NaN);
+        const endOverride = toHydraulicNumber(segment.endElevation, NaN);
+
+        return {
+            startElevation: mode !== 'Ignore' && Number.isFinite(startOverride) ? startOverride : defaultStartElevation,
+            endElevation: mode !== 'Ignore' && Number.isFinite(endOverride) ? endOverride : defaultEndElevation,
+            startLength: totalLength > 0 ? totalLength * startFraction : index,
+            endLength: totalLength > 0 ? cumulativeLength : index + 1,
+            length: segmentLength
+        };
+    });
+}
+
+function getPipeGlobalHighPointCandidate(pipe, details) {
+    if (getPipeElevationProfileMode(pipe) !== 'High Point Check') return null;
+    const segments = Array.isArray(pipe?.props?.segments) ? pipe.props.segments : [];
+    const hasSegmentHighPoint = segments.some(segment => Number.isFinite(toHydraulicNumber(segment.highPointElevation, NaN)));
+    if (hasSegmentHighPoint) return null;
+
+    const elevation = toHydraulicNumber(pipe?.props?.highPointElevation, NaN);
+    if (!Number.isFinite(elevation)) return null;
+
+    const locationPercent = Math.max(0, Math.min(100, toHydraulicNumber(pipe?.props?.highPointLocationPercent, 50)));
+    const totalLength = details.reduce((sum, detail) => sum + Math.max(toHydraulicNumber(detail.length, 0), 0), 0);
+    const targetLength = totalLength * (locationPercent / 100);
+    const segmentIndex = details.length
+        ? Math.min(details.length - 1, Math.max(0, Math.round((locationPercent / 100) * (details.length - 1))))
+        : 0;
+
+    return { elevation, locationPercent, targetLength, segmentIndex };
+}
+
+function getPipeHighPointCandidateForSegment(pipe, segment, detail, elevationProfile, globalCandidate) {
+    if (getPipeElevationProfileMode(pipe) !== 'High Point Check') return null;
+
+    const segmentHighPointElevation = toHydraulicNumber(segment?.highPointElevation, NaN);
+    if (Number.isFinite(segmentHighPointElevation)) {
+        const localPercent = Math.max(0, Math.min(100, toHydraulicNumber(segment.highPointLocationPercent, 50)));
+        return {
+            elevation: segmentHighPointElevation,
+            localFraction: localPercent / 100,
+            locationPercent: localPercent,
+            basis: 'Segment'
+        };
+    }
+
+    if (!globalCandidate) return null;
+    const highPointLength = globalCandidate.targetLength;
+    const segmentLength = Math.max(elevationProfile.length, 0);
+    const inSegment = segmentLength > 0
+        ? highPointLength >= elevationProfile.startLength && highPointLength <= elevationProfile.endLength
+        : globalCandidate.segmentIndex === detail.index;
+    if (!inSegment) return null;
+
+    const localFraction = segmentLength > 0
+        ? Math.max(0, Math.min(1, (highPointLength - elevationProfile.startLength) / segmentLength))
+        : 0.5;
+    return {
+        elevation: globalCandidate.elevation,
+        localFraction,
+        locationPercent: globalCandidate.locationPercent,
+        basis: 'Pipe'
+    };
+}
+
+function calculatePipeSegmentPressureProfile(pipe, flowRateM3H, inletHead, density, vaporPressureBar, fromElevation, toElevation) {
+    if (typeof calculatePipeHydraulicSegments !== 'function') return [];
+    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props);
+    const elevations = getPipeSegmentElevationProfile(pipe, fromElevation, toElevation, details);
+    const segments = Array.isArray(pipe?.props?.segments) ? pipe.props.segments : [];
+    const globalCandidate = getPipeGlobalHighPointCandidate(pipe, details);
+    const profiles = [];
+    let currentHead = inletHead;
+
+    details.forEach((detail, index) => {
+        const elevationProfile = elevations[index] || { startElevation: fromElevation, endElevation: toElevation, length: detail.length, startLength: 0, endLength: 0 };
+        const velocityHead = Math.pow(detail.velocity || 0, 2) / (2 * getHydraulicGravity());
+        const segmentLoss = toHydraulicNumber(detail.totalLoss, 0);
+        const startHead = currentHead;
+        const endHead = startHead - segmentLoss;
+        const startPressure = pressureHeadToBar(startHead - elevationProfile.startElevation - velocityHead, density);
+        const endPressure = pressureHeadToBar(endHead - elevationProfile.endElevation - velocityHead, density);
+        const highPointCandidate = getPipeHighPointCandidateForSegment(pipe, segments[index], detail, elevationProfile, globalCandidate);
+        let highPointPressure = null;
+        let highPointVaporMargin = null;
+
+        if (highPointCandidate) {
+            const highPointHead = startHead - (segmentLoss * highPointCandidate.localFraction);
+            highPointPressure = pressureHeadToBar(highPointHead - highPointCandidate.elevation - velocityHead, density);
+            highPointVaporMargin = Number.isFinite(highPointPressure) && Number.isFinite(vaporPressureBar)
+                ? highPointPressure - vaporPressureBar
+                : null;
+        }
+
+        profiles.push({
+            index: detail.index,
+            name: detail.name || `Segment ${index + 1}`,
+            startElevation: Number(elevationProfile.startElevation.toFixed(3)),
+            endElevation: Number(elevationProfile.endElevation.toFixed(3)),
+            startPressure: Number(startPressure.toFixed(3)),
+            endPressure: Number(endPressure.toFixed(3)),
+            startHead: Number(startHead.toFixed(3)),
+            endHead: Number(endHead.toFixed(3)),
+            highPointElevation: highPointCandidate ? Number(highPointCandidate.elevation.toFixed(3)) : null,
+            highPointLocationPercent: highPointCandidate ? Number(highPointCandidate.locationPercent.toFixed(1)) : null,
+            highPointBasis: highPointCandidate?.basis || '',
+            highPointPressure: Number.isFinite(highPointPressure) ? Number(highPointPressure.toFixed(3)) : null,
+            highPointVaporMargin: Number.isFinite(highPointVaporMargin) ? Number(highPointVaporMargin.toFixed(3)) : null
+        });
+
+        currentHead = endHead;
+    });
+
+    return profiles;
+}
+
+function setPipeHydraulicResult(model, step, flowRateM3H, inletHead, outletHead, density, vaporPressurePa = null) {
     const pipe = model[step.pipeId];
     if (!pipe || pipe.type !== 'pipe') return;
 
-    const fromElevation = getNodeHydraulicElevation(model[step.from]);
-    const toElevation = getNodeHydraulicElevation(model[step.to]);
+    const fromElevation = getPipeEndpointElevation(pipe, 'startElevation', step.from, step.fromPort, model);
+    const toElevation = getPipeEndpointElevation(pipe, 'endElevation', step.to, step.toPort, model);
     const midHead = (inletHead + outletHead) / 2;
     const midElevation = (fromElevation + toElevation) / 2;
     const inletVelocityHead = getPipeVelocityHead(step.pipeId, flowRateM3H, model, 'inlet');
     const outletVelocityHead = getPipeVelocityHead(step.pipeId, flowRateM3H, model, 'outlet');
     const averageVelocityHead = getPipeVelocityHead(step.pipeId, flowRateM3H, model, 'average');
+    const vaporPressureBar = Number.isFinite(vaporPressurePa) ? vaporPressurePa / 100000 : null;
+    const segmentProfiles = calculatePipeSegmentPressureProfile(pipe, flowRateM3H, inletHead, density, vaporPressureBar, fromElevation, toElevation);
+    const highPointProfiles = segmentProfiles.filter(profile => Number.isFinite(profile.highPointPressure));
+    const controllingHighPoint = highPointProfiles
+        .slice()
+        .sort((a, b) => {
+            const marginA = Number.isFinite(a.highPointVaporMargin) ? a.highPointVaporMargin : a.highPointPressure;
+            const marginB = Number.isFinite(b.highPointVaporMargin) ? b.highPointVaporMargin : b.highPointPressure;
+            return marginA - marginB;
+        })[0] || null;
+    const warnings = [];
+    highPointProfiles.forEach(profile => {
+        if (Number.isFinite(profile.highPointVaporMargin) && profile.highPointVaporMargin <= 0) {
+            warnings.push(`Pipe high point pressure at ${profile.name} is at or below vapor pressure; vapor margin ${profile.highPointVaporMargin.toFixed(3)} bar.`);
+        }
+    });
 
     const result = {
         flow: Number(flowRateM3H.toFixed(3)),
@@ -742,10 +1196,20 @@ function setPipeHydraulicResult(model, step, flowRateM3H, inletHead, outletHead,
         inletStagnationPressure: Number(pressureHeadToBar(inletHead - fromElevation, density).toFixed(3)),
         outletStagnationPressure: Number(pressureHeadToBar(outletHead - toElevation, density).toFixed(3)),
         velocityHead: Number(averageVelocityHead.toFixed(3)),
+        startElevation: Number(fromElevation.toFixed(3)),
+        endElevation: Number(toElevation.toFixed(3)),
+        highPointElevation: controllingHighPoint?.highPointElevation ?? null,
+        highPointPressure: controllingHighPoint?.highPointPressure ?? null,
+        highPointVaporMargin: controllingHighPoint?.highPointVaporMargin ?? null,
+        highPointSegment: controllingHighPoint?.name || '',
+        highPointLocationPercent: controllingHighPoint?.highPointLocationPercent ?? null,
+        vaporPressure: Number.isFinite(vaporPressureBar) ? Number(vaporPressureBar.toFixed(6)) : null,
+        segmentProfiles,
         inletHydraulicHead: Number(inletHead.toFixed(3)),
         outletHydraulicHead: Number(outletHead.toFixed(3)),
         hydraulicHead: Number(midHead.toFixed(3)),
-        pressureCalculated: true
+        pressureCalculated: true,
+        warnings
     };
 
     pipe.results = result;
@@ -763,9 +1227,9 @@ function applyHydraulicPathResults(context, snapshot, flowRateM3H) {
         currentHead -= calculateHydraulicEquipmentLossHead(globalModel[entryNodeId], flowRateM3H, context.density, globalModel);
     }
     context.suctionPath.steps.forEach(step => {
-        const pipeLoss = calculateHydraulicPipeLossHead(step.pipeId, flowRateM3H, globalModel);
+        const pipeLoss = calculateHydraulicPipeLossHead(step.pipeId, flowRateM3H, globalModel, context.fluidProps);
         const outletHead = currentHead - pipeLoss;
-        setPipeHydraulicResult(globalModel, step, flowRateM3H, currentHead, outletHead, context.density);
+        setPipeHydraulicResult(globalModel, step, flowRateM3H, currentHead, outletHead, context.density, context.vaporPressurePa);
         currentHead = outletHead;
         if (step.to !== context.pumpId) {
             currentHead -= calculateHydraulicEquipmentLossHead(globalModel[step.to], flowRateM3H, context.density, globalModel);
@@ -774,9 +1238,9 @@ function applyHydraulicPathResults(context, snapshot, flowRateM3H) {
 
     currentHead = snapshot.dischargeHeadAtPump;
     context.dischargePath.steps.forEach(step => {
-        const pipeLoss = calculateHydraulicPipeLossHead(step.pipeId, flowRateM3H, globalModel);
+        const pipeLoss = calculateHydraulicPipeLossHead(step.pipeId, flowRateM3H, globalModel, context.fluidProps);
         const outletHead = currentHead - pipeLoss;
-        setPipeHydraulicResult(globalModel, step, flowRateM3H, currentHead, outletHead, context.density);
+        setPipeHydraulicResult(globalModel, step, flowRateM3H, currentHead, outletHead, context.density, context.vaporPressurePa);
         currentHead = outletHead;
         if (step.to !== context.dischargePath.boundaryId) {
             currentHead -= calculateHydraulicEquipmentLossHead(globalModel[step.to], flowRateM3H, context.density, globalModel);

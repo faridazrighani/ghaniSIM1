@@ -1,30 +1,59 @@
 const TANK_PSV_MODE_MANUAL = 'Manual';
 const TANK_PSV_MODE_SUGGESTED = 'Suggested';
+const TANK_CODE_BASIS_API_650 = 'API 650 Atmospheric Tank';
+const TANK_CODE_BASIS_API_620 = 'API 620 Low-pressure Storage Tank';
+const TANK_CODE_BASIS_USER_DEFINED = 'User-defined';
+const TANK_CODE_BASIS_OPTIONS = [
+    TANK_CODE_BASIS_API_650,
+    TANK_CODE_BASIS_API_620,
+    TANK_CODE_BASIS_USER_DEFINED
+];
+const TANK_EMERGENCY_VENT_NOT_SPECIFIED = 'Not specified';
+const TANK_EMERGENCY_VENT_PROVIDED = 'Provided';
+const TANK_EMERGENCY_VENT_NOT_PROVIDED = 'Not provided';
+const TANK_EMERGENCY_VENT_OPTIONS = [
+    TANK_EMERGENCY_VENT_NOT_SPECIFIED,
+    TANK_EMERGENCY_VENT_PROVIDED,
+    TANK_EMERGENCY_VENT_NOT_PROVIDED
+];
 
 const TANK_SCHEMA = {
     visualScale: { label: 'PFD Size', unit: '%', type: 'number', default: 100 },
-    elevation: { label: 'Base Elevation', unit: 'm', type: 'number', default: 5 },
+    tankCodeBasis: {
+        label: 'Tank Code Basis',
+        type: 'select',
+        default: TANK_CODE_BASIS_API_650,
+        options: TANK_CODE_BASIS_OPTIONS
+    },
+    elevation: { label: 'Base Elevation', unit: 'm', type: 'number', default: 6 },
     diameter: { label: 'Tank Diameter', unit: 'm', type: 'number', default: 5 },
-    volume: { label: 'Total Volume', unit: 'm3', type: 'number', default: 39.27, readonly: true },
-    liquidLevel: { label: 'Current Level', unit: 'm', type: 'number', default: 2 },
-    hll: { label: 'High Liquid Level (HLL)', unit: 'm', type: 'number', default: 4.5 },
-    nll: { label: 'Normal Liq. Level (NLL)', unit: 'm', type: 'number', default: 2.5 },
-    lll: { label: 'Low Liquid Level (LLL)', unit: 'm', type: 'number', default: 0.5 },
-    tLevelElev: { label: 'Transmitter Elev.', unit: 'm', type: 'number', default: 0.2 },
+    tankHeight: { label: 'Tank Height / Shell Height', unit: 'm', type: 'number', default: 6 },
+    liquidVolume: { label: 'Liquid Volume', unit: 'm3', type: 'number', default: 58.905, readonly: true },
+    totalCapacity: { label: 'Total Capacity', unit: 'm3', type: 'number', default: 117.81, readonly: true },
+    fillPercent: { label: 'Fill Percentage', unit: '%', type: 'number', default: 50, readonly: true },
+    liquidLevel: { label: 'Current Level', unit: 'm', type: 'number', default: 3 },
+    inletNozzleElevation: { label: 'Inlet Nozzle Elev. from Datum', unit: 'm', type: 'number', default: 9 },
+    outletNozzleElevation: { label: 'Outlet Nozzle Elev. from Datum', unit: 'm', type: 'number', default: 7 },
+    hll: { label: 'High Liquid Level (HLL)', unit: 'm', type: 'number', default: 5 },
+    nll: { label: 'Normal Liq. Level (NLL)', unit: 'm', type: 'number', default: 3 },
+    lll: { label: 'Low Liquid Level (LLL)', unit: 'm', type: 'number', default: 1.5 },
+    tLevelElev: { label: 'Transmitter Elev. from Datum', unit: 'm', type: 'number', default: 9 },
     pressureInputBasis: {
         label: 'Pressure Basis',
         type: 'select',
         default: 'Gauge',
         options: ['Gauge', 'Absolute']
     },
-    pressure: { label: 'Operating Pressure', unit: 'bar g', type: 'number', default: 0 },
-    designPressure: { label: 'Design Pressure / MAWP', unit: 'bar g', type: 'number', default: 0 },
-    psvMode: {
-        label: 'PSV Mode',
+    pressure: { label: 'Operating Vapor Space Pressure', unit: 'bar g', type: 'number', default: 0 },
+    tankDesignPressure: { label: 'Tank Design Pressure', unit: 'mbar g', type: 'number', default: 25 },
+    designVacuum: { label: 'Design Vacuum', unit: 'mbar vacuum', type: 'number', default: 5 },
+    pressureVentSet: { label: 'Pressure Vent Set', unit: 'mbar g', type: 'number', default: 20 },
+    vacuumVentSet: { label: 'Vacuum Vent Set', unit: 'mbar vacuum', type: 'number', default: 3 },
+    emergencyVentProvided: {
+        label: 'Emergency Vent',
         type: 'select',
-        default: TANK_PSV_MODE_MANUAL,
-        options: [TANK_PSV_MODE_MANUAL, TANK_PSV_MODE_SUGGESTED]
+        default: TANK_EMERGENCY_VENT_PROVIDED,
+        options: TANK_EMERGENCY_VENT_OPTIONS
     },
-    psvSet: { label: 'PSV Set Pressure', unit: 'bar g', type: 'number', default: 0 },
     vaporPressure: { label: 'Vapor Pressure', unit: 'bar a', type: 'number', default: 0, readonly: true }
 };

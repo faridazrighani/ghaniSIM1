@@ -84,7 +84,7 @@ function calculatePalmOilProperties(tempC) {
         density: tableProps.density,
         vaporPressure: 0.001,
         dynamicViscosity: tableProps.dynamicViscosity,
-        kinematicViscosity: tableProps.kinematicViscosity,
+        kinematicViscosity: tableProps.dynamicViscosity / (tableProps.density / 1000),
         specificHeat: tableProps.specificHeat,
         thermalConductivity: tableProps.thermalConductivity,
         bulkModulus: 1.8

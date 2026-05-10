@@ -1,10 +1,20 @@
 function recalcExtendedFluidProps(fluidNode) {
     const rho = fluidNode.props.density;
+    const vaporPressureBarA = toFluidTraceNumber(fluidNode.props.vaporPressure, NaN);
+    const gravity = getFluidTraceGravity();
     if (rho > 0) {
         fluidNode.props.specVolume = 1 / rho;
-        fluidNode.props.specWeight = rho * GRAVITY;
+        fluidNode.props.specWeight = rho * gravity;
+        fluidNode.props.vaporPressureHead = Number.isFinite(vaporPressureBarA) && vaporPressureBarA >= 0
+            ? vaporPressureBarA * 100000 / (rho * gravity)
+            : null;
         const K_Pa = (fluidNode.props.bulkModulus || 2.2) * 1e9;
         fluidNode.props.speedOfSound = Math.sqrt(K_Pa / rho);
+    } else {
+        fluidNode.props.specVolume = null;
+        fluidNode.props.specWeight = null;
+        fluidNode.props.vaporPressureHead = null;
+        fluidNode.props.speedOfSound = null;
     }
 }
 
@@ -66,7 +76,7 @@ function getFluidTraceSourceProfile(fluidName, inputMode) {
             primary: 'Table interpolation / estimate',
             density: 'Palm oil liquid table interpolation',
             dynamicViscosity: 'Palm oil liquid table interpolation',
-            kinematicViscosity: 'Palm oil liquid table interpolation',
+            kinematicViscosity: 'Derived from dynamic viscosity and density',
             vaporPressure: 'Reference default estimate',
             thermal: 'Palm oil liquid table interpolation',
             note: 'Palm oil properties are composition dependent; validate final thesis cases against lab or literature data.'
@@ -88,7 +98,7 @@ function getFluidTraceSourceProfile(fluidName, inputMode) {
     return {
         primary: source,
         density: 'User input',
-        dynamicViscosity: inputMode === 'Advanced' ? 'User input' : 'Not directly used in Basic mode',
+        dynamicViscosity: inputMode === 'Advanced' ? 'User input' : 'Derived from kinematic viscosity and density',
         kinematicViscosity: inputMode === 'Advanced' ? 'Derived from dynamic viscosity and density' : 'User input',
         vaporPressure: 'User input',
         thermal: inputMode === 'Advanced' ? 'User input' : 'Not configured in Basic mode',
@@ -302,9 +312,10 @@ function buildFluidCalculationTrace(fluidNode) {
     const fluidName = props.fluidName || 'Custom';
     const inputMode = props.inputMode || 'Basic';
     const tempC = toFluidTraceNumber(props.temp, 25);
+    const tempK = tempC + 273.15;
     const density = toFluidTraceNumber(props.density, NaN);
-    const dynamicViscosity = toFluidTraceNumber(props.dynViscosity, NaN);
-    const kinematicViscosity = toFluidTraceNumber(props.viscosity, NaN);
+    const dynamicViscosityInput = toFluidTraceNumber(props.dynViscosity, NaN);
+    const kinematicViscosityInput = toFluidTraceNumber(props.viscosity, NaN);
     const vaporPressureBarA = toFluidTraceNumber(props.vaporPressure, NaN);
     const specificHeat = toFluidTraceNumber(props.specificHeat, NaN);
     const bulkModulusGpa = toFluidTraceNumber(props.bulkModulus, NaN);
@@ -314,9 +325,19 @@ function buildFluidCalculationTrace(fluidNode) {
     const auditProfile = getFluidAuditProfile(fluidName, inputMode);
     const method = getFluidTraceMethod(fluidName, props);
     const specificGravity = Number.isFinite(density) ? density / densityRef : NaN;
+    const dynamicFromKinematic = Number.isFinite(kinematicViscosityInput) && Number.isFinite(density) && density > 0
+        ? kinematicViscosityInput * (density / 1000)
+        : NaN;
+    const isCustomBasic = fluidName === 'Custom' && inputMode === 'Basic';
+    const dynamicViscosity = isCustomBasic && Number.isFinite(dynamicFromKinematic)
+        ? dynamicFromKinematic
+        : dynamicViscosityInput;
     const kinematicFromDynamic = Number.isFinite(dynamicViscosity) && Number.isFinite(density) && density > 0
         ? dynamicViscosity / (density / 1000)
         : NaN;
+    const kinematicViscosity = isCustomBasic
+        ? kinematicViscosityInput
+        : (Number.isFinite(kinematicFromDynamic) ? kinematicFromDynamic : kinematicViscosityInput);
     const specificVolume = Number.isFinite(density) && density > 0 ? 1 / density : NaN;
     const specificWeight = Number.isFinite(density) ? density * gravity : NaN;
     const vaporPressureHead = Number.isFinite(vaporPressureBarA) && Number.isFinite(density) && density > 0
@@ -325,6 +346,15 @@ function buildFluidCalculationTrace(fluidNode) {
     const speedOfSound = Number.isFinite(bulkModulusGpa) && Number.isFinite(density) && density > 0
         ? Math.sqrt(bulkModulusGpa * 1e9 / density)
         : toFluidTraceNumber(props.speedOfSound, NaN);
+    if (fluidNode?.props) {
+        fluidNode.props.sg = Number.isFinite(specificGravity) ? specificGravity : fluidNode.props.sg;
+        fluidNode.props.dynViscosity = Number.isFinite(dynamicViscosity) ? dynamicViscosity : fluidNode.props.dynViscosity;
+        fluidNode.props.viscosity = Number.isFinite(kinematicViscosity) ? kinematicViscosity : fluidNode.props.viscosity;
+        fluidNode.props.specVolume = Number.isFinite(specificVolume) ? specificVolume : fluidNode.props.specVolume;
+        fluidNode.props.specWeight = Number.isFinite(specificWeight) ? specificWeight : fluidNode.props.specWeight;
+        fluidNode.props.vaporPressureHead = Number.isFinite(vaporPressureHead) ? vaporPressureHead : null;
+        fluidNode.props.speedOfSound = Number.isFinite(speedOfSound) ? speedOfSound : fluidNode.props.speedOfSound;
+    }
     const warnings = [];
     const tempRange = getFluidTraceTemperatureRange(fluidName);
 
@@ -360,23 +390,87 @@ function buildFluidCalculationTrace(fluidNode) {
 
     const steps = [
         {
+            title: 'Temperature Basis',
+            source: 'Input basis',
+            formula: 'T(K) = T(deg C) + 273.15 when a correlation requires absolute temperature',
+            substitution: `${formatFluidTraceNumber(tempC)} + 273.15 = ${formatFluidTraceNumber(tempK)} K`,
+            result: tempC,
+            unit: 'deg C',
+            digits: 3,
+            reference: 'Formula verified: temperature conversion for SI thermophysical correlations'
+        },
+        {
+            title: 'Density',
+            source: sourceProfile.density,
+            formula: 'rho = fluid correlation, table interpolation, or user input at the selected temperature',
+            substitution: `${sourceProfile.density}; T = ${formatFluidTraceNumber(tempC)} deg C`,
+            result: density,
+            unit: 'kg/m3',
+            digits: 3,
+            reference: auditProfile.primaryReference
+        },
+        {
+            title: 'Dynamic Viscosity',
+            source: sourceProfile.dynamicViscosity,
+            formula: isCustomBasic ? 'mu(cP) = nu(cSt) x (rho / 1000)' : 'mu = fluid correlation, table interpolation, or user input',
+            substitution: isCustomBasic && Number.isFinite(dynamicFromKinematic)
+                ? `${formatFluidTraceNumber(kinematicViscosityInput, 6)} x (${formatFluidTraceNumber(density)} / 1000) = ${formatFluidTraceNumber(dynamicViscosity, 6)} cP`
+                : `${sourceProfile.dynamicViscosity}; T = ${formatFluidTraceNumber(tempC)} deg C`,
+            result: dynamicViscosity,
+            unit: 'cP',
+            digits: 3,
+            reference: isCustomBasic ? auditProfile.derivedReference : auditProfile.primaryReference
+        },
+        {
+            title: 'Vapor Pressure',
+            source: sourceProfile.vaporPressure,
+            formula: 'Pv = absolute vapor pressure from fluid correlation, estimate, or user input',
+            substitution: `${sourceProfile.vaporPressure}; T = ${formatFluidTraceNumber(tempC)} deg C`,
+            result: vaporPressureBarA,
+            unit: 'bar a',
+            digits: 6,
+            reference: auditProfile.vaporReference
+        },
+        {
+            title: 'Specific Heat',
+            source: sourceProfile.thermal,
+            formula: 'cp = fluid correlation, table interpolation, estimate, or user input',
+            substitution: `${sourceProfile.thermal}; T = ${formatFluidTraceNumber(tempC)} deg C`,
+            result: specificHeat,
+            unit: 'kJ/kg.K',
+            digits: 3,
+            reference: auditProfile.thermalReference
+        },
+        {
+            title: 'Bulk Modulus',
+            source: 'Fluid basis property',
+            formula: 'K(Pa) = K(GPa) x 1e9 for hydraulic reference calculations',
+            substitution: `${formatFluidTraceNumber(bulkModulusGpa, 6)} GPa x 1e9 = ${formatFluidTraceNumber(bulkModulusGpa * 1e9, 3)} Pa`,
+            result: bulkModulusGpa,
+            unit: 'GPa',
+            digits: 3,
+            reference: auditProfile.bulkReference
+        },
+        {
             title: 'Specific Gravity',
             source: 'Derived',
             formula: 'SG = rho / rho_ref',
             substitution: `${formatFluidTraceNumber(density)} / ${formatFluidTraceNumber(densityRef)} = ${formatFluidTraceNumber(specificGravity, 6)}`,
-            result: values.specificGravity,
+            result: specificGravity,
             unit: '',
+            digits: 5,
             reference: `Formula verified: SG = rho / rho_ref, rho_ref = ${formatFluidTraceNumber(densityRef, 3)} kg/m3`
         },
         {
             title: 'Kinematic Viscosity',
             source: sourceProfile.kinematicViscosity,
             formula: 'nu(cSt) = mu(cP) / (rho / 1000)',
-            substitution: Number.isFinite(kinematicFromDynamic)
+            substitution: !isCustomBasic && Number.isFinite(kinematicFromDynamic)
                 ? `${formatFluidTraceNumber(dynamicViscosity, 6)} / (${formatFluidTraceNumber(density)} / 1000) = ${formatFluidTraceNumber(kinematicFromDynamic, 6)} cSt`
                 : `Reported value = ${formatFluidTraceNumber(kinematicViscosity, 6)} cSt`,
-            result: roundFluidTraceNumber(Number.isFinite(kinematicFromDynamic) ? kinematicFromDynamic : kinematicViscosity, 6),
+            result: kinematicViscosity,
             unit: 'cSt',
+            digits: 3,
             reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines kinematic viscosity as mu / rho'
         },
         {
@@ -384,8 +478,9 @@ function buildFluidCalculationTrace(fluidNode) {
             source: 'Derived',
             formula: 'gamma = rho x g',
             substitution: `${formatFluidTraceNumber(density)} x ${formatFluidTraceNumber(gravity)} = ${formatFluidTraceNumber(specificWeight)} N/m3`,
-            result: values.specificWeight,
+            result: specificWeight,
             unit: 'N/m3',
+            digits: 3,
             reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines gamma = rho x g; app uses g = 9.81 m/s2'
         },
         {
@@ -393,17 +488,19 @@ function buildFluidCalculationTrace(fluidNode) {
             source: 'Derived',
             formula: 'v = 1 / rho',
             substitution: `1 / ${formatFluidTraceNumber(density)} = ${formatFluidTraceNumber(specificVolume, 9)} m3/kg`,
-            result: values.specificVolume,
+            result: specificVolume,
             unit: 'm3/kg',
+            digits: 8,
             reference: 'Formula verified: pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf defines specific volume as 1 / rho'
         },
         {
             title: 'Vapor Pressure Head',
             source: 'NPSH relevance',
-            formula: 'Hv = Pv x 100000 / (rho x g)',
+            formula: 'Hv = Pv_abs(Pa) / gamma = Pv_bar(a) x 100000 / (rho x g)',
             substitution: `${formatFluidTraceNumber(vaporPressureBarA, 6)} x 100000 / (${formatFluidTraceNumber(density)} x ${formatFluidTraceNumber(gravity)}) = ${formatFluidTraceNumber(vaporPressureHead)} m`,
-            result: values.vaporPressureHead,
+            result: vaporPressureHead,
             unit: 'm',
+            digits: 3,
             reference: 'Formula verified: pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf Appendix A pressure-head conversion'
         },
         {
@@ -413,8 +510,9 @@ function buildFluidCalculationTrace(fluidNode) {
             substitution: Number.isFinite(bulkModulusGpa)
                 ? `sqrt(${formatFluidTraceNumber(bulkModulusGpa)}e9 / ${formatFluidTraceNumber(density)}) = ${formatFluidTraceNumber(speedOfSound)} m/s`
                 : `Reported value = ${formatFluidTraceNumber(speedOfSound)} m/s`,
-            result: values.speedOfSound,
+            result: speedOfSound,
             unit: 'm/s',
+            digits: 3,
             reference: auditProfile.bulkReference
         }
     ];

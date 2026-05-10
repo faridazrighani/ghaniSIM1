@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Initialize core components
     initMenuBar();
     if (typeof initTaskWindow === 'function') initTaskWindow();
+    if (typeof initCanvasWarningPanelWindow === 'function') initCanvasWarningPanelWindow();
     initializeChart(); // Pump performance chart modal
 
     const canvas = document.getElementById('canvas');
@@ -81,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.clearTimeout(resizeTimer);
         resizeTimer = window.setTimeout(() => {
             drawConnections();
+            if (typeof positionCanvasWarningPanelDefault === 'function') positionCanvasWarningPanelDefault();
             if (activeChartPumpId) updatePumpChart(activeChartPumpId);
             if (pumpChartInstance) pumpChartInstance.resize();
         }, 80);
