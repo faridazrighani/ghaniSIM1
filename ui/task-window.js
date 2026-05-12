@@ -1,5 +1,16 @@
 let taskWindowDragState = null;
 let pipePropertiesTaskNodeId = null;
+let pipePropertiesTaskDismissedNodeId = null;
+let pipePropertiesTaskRequestedNodeId = null;
+let tankPropertiesTaskNodeId = null;
+let tankPropertiesTaskDismissedNodeId = null;
+let tankPropertiesTaskRequestedNodeId = null;
+let objectPropertiesTaskNodeId = null;
+let objectPropertiesTaskDismissedNodeId = null;
+let objectPropertiesTaskRequestedNodeId = null;
+let taskWindowLauncherNodeId = null;
+let taskWindowLauncherKind = null;
+let fluidBasisSetupPrompt = null;
 
 const FLUID_AUTO_NAMES = ['Water', 'Methanol', 'Palm Oil', 'Crude Oil'];
 
@@ -88,6 +99,8 @@ function initTaskWindow() {
         if (e.key === 'Escape' && !taskWindow.hidden) closeTaskWindow();
     });
 
+    document.addEventListener('pointerdown', minimizeTaskWindowOnOutsidePointerDown, true);
+
     window.addEventListener('resize', clampTaskWindowToViewport);
     window.addEventListener('orientationchange', () => {
         window.setTimeout(clampTaskWindowToViewport, 120);
@@ -160,6 +173,81 @@ function restoreTaskWindow() {
     setTaskWindowMinimized(false);
 }
 
+function ensureTaskWindowLauncher() {
+    let launcher = document.getElementById('taskWindowLauncher');
+    if (launcher) return launcher;
+
+    launcher = document.createElement('button');
+    launcher.type = 'button';
+    launcher.id = 'taskWindowLauncher';
+    launcher.className = 'task-window-launcher';
+    launcher.hidden = true;
+    launcher.setAttribute('aria-label', 'Show properties task window');
+
+    const title = document.createElement('span');
+    title.className = 'task-window-launcher-title';
+    const meta = document.createElement('span');
+    meta.className = 'task-window-launcher-meta';
+    launcher.append(title, meta);
+
+    launcher.addEventListener('click', () => {
+        const nodeId = launcher.dataset.nodeId || taskWindowLauncherNodeId;
+        const kind = launcher.dataset.kind || taskWindowLauncherKind;
+        if (!nodeId || !kind) return;
+
+        if (kind === 'pipe' && typeof requestPipePropertiesTaskWindowOpen === 'function') {
+            requestPipePropertiesTaskWindowOpen(nodeId);
+        } else if (kind === 'tank' && typeof requestTankPropertiesTaskWindowOpen === 'function') {
+            requestTankPropertiesTaskWindowOpen(nodeId);
+        } else if (kind === 'object' && typeof requestObjectPropertiesTaskWindowOpen === 'function') {
+            requestObjectPropertiesTaskWindowOpen(nodeId);
+        }
+
+        if (typeof renderSidebar === 'function') renderSidebar(nodeId);
+    });
+
+    document.body.appendChild(launcher);
+    return launcher;
+}
+
+function getTaskWindowLauncherLabel(kind, node) {
+    if (kind === 'pipe') return 'Pipe Object Properties';
+    if (kind === 'tank') return 'Tank Object Properties';
+    if (kind === 'object') return getObjectPropertiesTaskLabel(node);
+    return 'Object Properties';
+}
+
+function showTaskWindowLauncher(kind, nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node) return;
+
+    const launcher = ensureTaskWindowLauncher();
+    if (!launcher) return;
+
+    const label = getTaskWindowLauncherLabel(kind, node);
+    taskWindowLauncherKind = kind;
+    taskWindowLauncherNodeId = nodeId;
+    launcher.dataset.kind = kind;
+    launcher.dataset.nodeId = nodeId;
+    launcher.querySelector('.task-window-launcher-title').textContent = `Show ${label}`;
+    launcher.querySelector('.task-window-launcher-meta').textContent = node.name || nodeId;
+    launcher.setAttribute('aria-label', `Show ${label} for ${node.name || nodeId}`);
+    launcher.hidden = false;
+}
+
+function hideTaskWindowLauncher(kind = null, nodeId = null) {
+    const launcher = document.getElementById('taskWindowLauncher');
+    if (!launcher) return;
+    if (kind && launcher.dataset.kind !== kind) return;
+    if (nodeId && launcher.dataset.nodeId !== nodeId) return;
+
+    launcher.hidden = true;
+    delete launcher.dataset.kind;
+    delete launcher.dataset.nodeId;
+    taskWindowLauncherKind = null;
+    taskWindowLauncherNodeId = null;
+}
+
 function openTaskWindow(title, content, options = {}) {
     const taskWindow = document.getElementById('taskWindow');
     const taskTitle = document.getElementById('taskWindowTitle');
@@ -167,6 +255,7 @@ function openTaskWindow(title, content, options = {}) {
     if (!taskWindow || !taskTitle || !taskBody) return;
 
     initTaskWindow();
+    hideTaskWindowLauncher();
     const shouldPreserveMinimized = options.preserveMinimized === true && isTaskWindowMinimized();
     taskTitle.textContent = title;
     taskBody.replaceChildren();
@@ -186,7 +275,11 @@ function openTaskWindow(title, content, options = {}) {
     taskWindow.dataset.kind = options.kind || '';
     taskWindow.classList.toggle('task-window-fluid-active', options.kind === 'fluid');
     taskWindow.classList.toggle('task-window-pipe-active', options.kind === 'pipe');
+    taskWindow.classList.toggle('task-window-tank-active', options.kind === 'tank');
+    taskWindow.classList.toggle('task-window-object-active', options.kind === 'object');
     document.body.classList.toggle('pipe-properties-task-open', options.kind === 'pipe');
+    document.body.classList.toggle('tank-properties-task-open', options.kind === 'tank');
+    document.body.classList.toggle('object-properties-task-open', options.kind === 'object');
     if (options.kind !== 'fluid') closeTabletFluidBottomDock();
     setTaskWindowMinimized(shouldPreserveMinimized);
     if (options.resetPosition && !shouldPreserveMinimized) {
@@ -194,22 +287,86 @@ function openTaskWindow(title, content, options = {}) {
     }
 }
 
-function closeTaskWindow() {
+function closeTaskWindow(options = {}) {
     const taskWindow = document.getElementById('taskWindow');
+    let dismissedPipeId = null;
+    let dismissedTankId = null;
+    let dismissedObjectId = null;
     if (taskWindow) {
+        const closingKind = taskWindow.dataset.kind;
+        if (closingKind === 'pipe' && options.markDismissed !== false) {
+            dismissedPipeId = pipePropertiesTaskNodeId || currentSelectedNode || null;
+            pipePropertiesTaskDismissedNodeId = dismissedPipeId;
+        }
+        if (closingKind === 'tank' && options.markDismissed !== false) {
+            dismissedTankId = tankPropertiesTaskNodeId || currentSelectedNode || null;
+            tankPropertiesTaskDismissedNodeId = dismissedTankId;
+        }
+        if (closingKind === 'object' && options.markDismissed !== false) {
+            dismissedObjectId = objectPropertiesTaskNodeId || currentSelectedNode || null;
+            objectPropertiesTaskDismissedNodeId = dismissedObjectId;
+        }
         taskWindow.hidden = true;
-        taskWindow.classList.remove('task-window-fluid-active', 'task-window-pipe-active', 'task-window-minimized');
+        taskWindow.classList.remove('task-window-fluid-active', 'task-window-pipe-active', 'task-window-tank-active', 'task-window-object-active', 'task-window-minimized');
         delete taskWindow.dataset.kind;
         updateTaskWindowMinimizeButton();
     }
-    document.body.classList.remove('pipe-properties-task-open');
+    document.body.classList.remove('pipe-properties-task-open', 'tank-properties-task-open', 'object-properties-task-open');
     pipePropertiesTaskNodeId = null;
+    tankPropertiesTaskNodeId = null;
+    objectPropertiesTaskNodeId = null;
     closeTabletFluidBottomDock();
+    if (dismissedPipeId && typeof showPipePropertiesTaskNotice === 'function') {
+        showPipePropertiesTaskNotice(dismissedPipeId);
+    }
+    if (dismissedTankId && typeof showTankPropertiesTaskNotice === 'function') {
+        showTankPropertiesTaskNotice(dismissedTankId);
+    }
+    if (dismissedObjectId && typeof showObjectPropertiesTaskNotice === 'function') {
+        showObjectPropertiesTaskNotice(dismissedObjectId);
+    }
 }
 
 function closePipePropertiesTaskWindow() {
     const taskWindow = document.getElementById('taskWindow');
-    if (taskWindow?.dataset.kind === 'pipe') closeTaskWindow();
+    if (taskWindow?.dataset.kind === 'pipe') closeTaskWindow({ markDismissed: false });
+}
+
+function closeTankPropertiesTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (taskWindow?.dataset.kind === 'tank') closeTaskWindow({ markDismissed: false });
+}
+
+function closeObjectPropertiesTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (taskWindow?.dataset.kind === 'object') closeTaskWindow({ markDismissed: false });
+}
+
+function requestPipePropertiesTaskWindowOpen(nodeId) {
+    pipePropertiesTaskRequestedNodeId = nodeId || null;
+    if (nodeId && pipePropertiesTaskDismissedNodeId === nodeId) {
+        pipePropertiesTaskDismissedNodeId = null;
+    }
+}
+
+function isPipePropertiesTaskDismissed(nodeId) {
+    return !!(nodeId && pipePropertiesTaskDismissedNodeId === nodeId);
+}
+
+function isTaskWindowOutsidePointerTarget(target, taskWindow) {
+    if (!target || !taskWindow) return false;
+    if (taskWindow.contains(target)) return false;
+    if (target.closest?.('#taskWindowLauncher')) return false;
+    return true;
+}
+
+function minimizeTaskWindowOnOutsidePointerDown(event) {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow || taskWindow.hidden) return;
+    if (isTaskWindowMinimized()) return;
+    if (!isTaskWindowOutsidePointerTarget(event.target, taskWindow)) return;
+
+    minimizeTaskWindow();
 }
 
 function createPipePropertiesTaskRoot(nodeId) {
@@ -244,10 +401,15 @@ function openPipePropertiesTaskWindow(nodeId) {
     const taskWindow = document.getElementById('taskWindow');
     const previousPipeTaskNodeId = pipePropertiesTaskNodeId;
     const wasPipeTask = taskWindow?.dataset.kind === 'pipe';
-    const preserveMinimized = wasPipeTask && isTaskWindowMinimized();
+    const preserveMinimized = wasPipeTask && previousPipeTaskNodeId === nodeId && isTaskWindowMinimized();
+    const requestedOpen = pipePropertiesTaskRequestedNodeId === nodeId;
+    pipePropertiesTaskRequestedNodeId = null;
+    if (pipePropertiesTaskDismissedNodeId === nodeId && !requestedOpen) return false;
+
+    pipePropertiesTaskDismissedNodeId = null;
     pipePropertiesTaskNodeId = nodeId;
     openTaskWindow(
-        `Pipe Object Properties - ${node.name || nodeId}`,
+        'Pipe Object Properties',
         createPipePropertiesTaskRoot(nodeId),
         {
             kind: 'pipe',
@@ -268,30 +430,206 @@ function getPipePropertiesTaskTargets() {
 }
 
 function showPipePropertiesTaskNotice(nodeId) {
-    const header = document.getElementById('propTableHeader');
-    const body = document.getElementById('propTableBody');
-    const hint = document.getElementById('editorHint');
     const node = globalModel?.[nodeId];
-    if (!header || !body || !node) return;
+    if (!node) return;
+    const dismissed = isPipePropertiesTaskDismissed(nodeId);
 
-    header.textContent = node.name || nodeId;
-    body.innerHTML = `
-        <tr>
-            <td colspan="2" class="pipe-task-sidebar-cell">
-                <div class="pipe-task-sidebar-notice">
-                    <strong>Pipe Object Properties</strong>
-                    <span>Active in Task Window</span>
-                    <button type="button" class="pipe-task-restore-button" data-open-pipe-task="${nodeId}">Show Window</button>
-                </div>
-            </td>
-        </tr>
-    `;
-    hint.style.display = 'none';
+    if (dismissed) {
+        showTaskWindowLauncher('pipe', nodeId);
+    } else {
+        hideTaskWindowLauncher('pipe', nodeId);
+    }
+}
 
-    body.querySelector('[data-open-pipe-task]')?.addEventListener('click', () => {
-        if (isTaskWindowMinimized()) restoreTaskWindow();
-        if (typeof renderSidebar === 'function') renderSidebar(nodeId);
-    });
+function requestTankPropertiesTaskWindowOpen(nodeId) {
+    tankPropertiesTaskRequestedNodeId = nodeId || null;
+    if (nodeId && tankPropertiesTaskDismissedNodeId === nodeId) {
+        tankPropertiesTaskDismissedNodeId = null;
+    }
+}
+
+function isTankPropertiesTaskDismissed(nodeId) {
+    return !!(nodeId && tankPropertiesTaskDismissedNodeId === nodeId);
+}
+
+function createTankPropertiesTaskRoot(nodeId) {
+    const root = document.createElement('div');
+    root.className = 'pipe-properties-task tank-properties-task';
+    root.dataset.tankNode = nodeId;
+
+    const table = document.createElement('table');
+    table.className = 'prop-table pipe-task-prop-table tank-task-prop-table';
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headerCell = document.createElement('th');
+    headerCell.colSpan = 2;
+    headerCell.id = 'tankTaskPropTableHeader';
+    headerCell.textContent = 'Tank Object Properties';
+    headerRow.appendChild(headerCell);
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement('tbody');
+    tbody.id = 'tankTaskPropTableBody';
+
+    table.append(thead, tbody);
+    root.appendChild(table);
+    return root;
+}
+
+function openTankPropertiesTaskWindow(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node || node.type !== 'tank') return false;
+
+    const taskWindow = document.getElementById('taskWindow');
+    const previousTankTaskNodeId = tankPropertiesTaskNodeId;
+    const wasTankTask = taskWindow?.dataset.kind === 'tank';
+    const preserveMinimized = wasTankTask && previousTankTaskNodeId === nodeId && isTaskWindowMinimized();
+    const requestedOpen = tankPropertiesTaskRequestedNodeId === nodeId;
+    tankPropertiesTaskRequestedNodeId = null;
+    if (tankPropertiesTaskDismissedNodeId === nodeId && !requestedOpen) return false;
+
+    tankPropertiesTaskDismissedNodeId = null;
+    tankPropertiesTaskNodeId = nodeId;
+    openTaskWindow(
+        'Tank Object Properties',
+        createTankPropertiesTaskRoot(nodeId),
+        {
+            kind: 'tank',
+            bodyClass: 'pipe-properties-task-body tank-properties-task-body',
+            preserveMinimized,
+            resetPosition: !wasTankTask,
+            resetScroll: !wasTankTask || previousTankTaskNodeId !== nodeId
+        }
+    );
+    return true;
+}
+
+function getTankPropertiesTaskTargets() {
+    const header = document.getElementById('tankTaskPropTableHeader');
+    const body = document.getElementById('tankTaskPropTableBody');
+    if (!header || !body) return null;
+    return { header, body };
+}
+
+function showTankPropertiesTaskNotice(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node) return;
+    const dismissed = isTankPropertiesTaskDismissed(nodeId);
+
+    if (dismissed) {
+        showTaskWindowLauncher('tank', nodeId);
+    } else {
+        hideTaskWindowLauncher('tank', nodeId);
+    }
+}
+
+function getObjectPropertiesTaskLabel(node) {
+    if (!node) return 'Object';
+    if (node.type === 'valve' && String(node.props?.valveType || '').toLowerCase().includes('control valve')) {
+        return 'Control Valve Object Properties';
+    }
+    const labels = {
+        pump: 'Pump Object Properties',
+        source: 'Source Object Properties',
+        sink: 'Sink Object Properties',
+        valve: 'Valve Object Properties',
+        checkValve: 'Check Valve Object Properties',
+        separator: 'Separator Object Properties',
+        horizontalVessel: 'Horizontal Vessel Object Properties',
+        verticalVessel: 'Vertical Vessel Object Properties',
+        heatExchanger: 'Heat Exchanger Object Properties',
+        mixer: 'Mixer Object Properties',
+        instrument: 'Instrument Object Properties',
+        lineMonitor: 'Line Monitor Object Properties',
+        levelController: 'Level Controller Object Properties',
+        networkNode: 'Network Node Object Properties'
+    };
+    return labels[node.type] || 'Object Properties';
+}
+
+function requestObjectPropertiesTaskWindowOpen(nodeId) {
+    objectPropertiesTaskRequestedNodeId = nodeId || null;
+    if (nodeId && objectPropertiesTaskDismissedNodeId === nodeId) {
+        objectPropertiesTaskDismissedNodeId = null;
+    }
+}
+
+function isObjectPropertiesTaskDismissed(nodeId) {
+    return !!(nodeId && objectPropertiesTaskDismissedNodeId === nodeId);
+}
+
+function createObjectPropertiesTaskRoot(nodeId) {
+    const root = document.createElement('div');
+    root.className = 'pipe-properties-task object-properties-task';
+    root.dataset.objectNode = nodeId;
+
+    const table = document.createElement('table');
+    table.className = 'prop-table pipe-task-prop-table object-task-prop-table';
+
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headerCell = document.createElement('th');
+    headerCell.colSpan = 2;
+    headerCell.id = 'objectTaskPropTableHeader';
+    headerCell.textContent = 'Object Properties';
+    headerRow.appendChild(headerCell);
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement('tbody');
+    tbody.id = 'objectTaskPropTableBody';
+
+    table.append(thead, tbody);
+    root.appendChild(table);
+    return root;
+}
+
+function openObjectPropertiesTaskWindow(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node || ['pipe', 'tank', 'fluid'].includes(node.type)) return false;
+
+    const taskWindow = document.getElementById('taskWindow');
+    const previousObjectTaskNodeId = objectPropertiesTaskNodeId;
+    const wasObjectTask = taskWindow?.dataset.kind === 'object';
+    const preserveMinimized = wasObjectTask && previousObjectTaskNodeId === nodeId && isTaskWindowMinimized();
+    const requestedOpen = objectPropertiesTaskRequestedNodeId === nodeId;
+    objectPropertiesTaskRequestedNodeId = null;
+    if (objectPropertiesTaskDismissedNodeId === nodeId && !requestedOpen) return false;
+
+    objectPropertiesTaskDismissedNodeId = null;
+    objectPropertiesTaskNodeId = nodeId;
+    const label = getObjectPropertiesTaskLabel(node);
+    openTaskWindow(
+        label,
+        createObjectPropertiesTaskRoot(nodeId),
+        {
+            kind: 'object',
+            bodyClass: 'pipe-properties-task-body object-properties-task-body',
+            preserveMinimized,
+            resetPosition: !wasObjectTask,
+            resetScroll: !wasObjectTask || previousObjectTaskNodeId !== nodeId
+        }
+    );
+    return true;
+}
+
+function getObjectPropertiesTaskTargets() {
+    const header = document.getElementById('objectTaskPropTableHeader');
+    const body = document.getElementById('objectTaskPropTableBody');
+    if (!header || !body) return null;
+    return { header, body };
+}
+
+function showObjectPropertiesTaskNotice(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node) return;
+    const dismissed = isObjectPropertiesTaskDismissed(nodeId);
+
+    if (dismissed) {
+        showTaskWindowLauncher('object', nodeId);
+    } else {
+        hideTaskWindowLauncher('object', nodeId);
+    }
 }
 
 function isFluidAuto(fluidName) {
@@ -318,6 +656,33 @@ function formatFluidTaskValue(value, unit = '', digits = 3) {
     }
     const display = formatFluidTaskNumber(value, digits);
     return display === '-' || !unit ? display : `${display} ${unit}`;
+}
+
+function getFluidDisplayMeta(key, label = '', unit = '') {
+    if (typeof getDisplayFieldMeta !== 'function') {
+        return { quantity: null, unit, pressureBasis: '' };
+    }
+    return getDisplayFieldMeta('fluid', key, label, unit);
+}
+
+function getFluidDisplayValue(key, value, field = {}) {
+    const meta = getFluidDisplayMeta(key, field.label || key, field.unit || '');
+    return meta.quantity ? convertToDisplay(value, meta.quantity) : value;
+}
+
+function getFluidInternalInputValue(key, value, field = {}) {
+    const meta = getFluidDisplayMeta(key, field.label || key, field.unit || '');
+    return meta.quantity ? convertFromDisplay(value, meta.quantity) : value;
+}
+
+function getFluidDisplayUnit(key, field = {}) {
+    return getFluidDisplayMeta(key, field.label || key, field.unit || '').unit || field.unit || '';
+}
+
+function formatFluidTaskFieldValue(key, value, field = {}) {
+    const displayValue = getFluidDisplayValue(key, value, field);
+    const unit = getFluidDisplayUnit(key, field);
+    return formatFluidTaskValue(displayValue, unit, field.digits ?? 3);
 }
 
 function getFluidFieldDefinition(key) {
@@ -366,6 +731,9 @@ function runFluidBasisUpdate(changedKey) {
     const fluidNode = globalModel.FLUID;
     if (!fluidNode) return;
     const props = fluidNode.props;
+    if (typeof markBasisDirty === 'function') {
+        markBasisDirty(`${changedKey || 'Fluid Basis'} changed.`);
+    }
 
     if (isFluidAuto(props.fluidName)) {
         updateAutoFluidProperties(props.fluidName);
@@ -393,28 +761,33 @@ function createFluidFieldRow(field, value, editable) {
 
     const controlWrap = document.createElement('span');
     controlWrap.className = 'fluid-field-control';
+    const displayValue = getFluidDisplayValue(field.key, value, field);
+    const displayUnit = getFluidDisplayUnit(field.key, field);
+    const meta = getFluidDisplayMeta(field.key, field.label, field.unit);
 
     if (editable) {
         const input = document.createElement('input');
         input.type = 'number';
         input.step = 'any';
         input.className = 'fluid-task-input';
-        input.value = Number.isFinite(parseFloat(value)) ? value : '';
+        input.value = Number.isFinite(parseFloat(displayValue)) ? displayValue : '';
         input.dataset.fluidControl = field.key;
+        input.dataset.quantity = meta.quantity || '';
+        input.dataset.baseUnit = field.unit || '';
         controlWrap.appendChild(input);
     } else {
         const output = document.createElement('strong');
         output.className = 'fluid-task-readout';
         output.dataset.fluidValue = field.key;
-        output.textContent = formatFluidTaskValue(value, field.unit, field.digits);
+        output.textContent = formatFluidTaskFieldValue(field.key, value, field);
         output.title = Number.isFinite(parseFloat(value)) ? String(value) : '';
         controlWrap.appendChild(output);
     }
 
-    if (field.unit && editable) {
+    if (displayUnit && editable) {
         const unit = document.createElement('span');
         unit.className = 'fluid-field-unit';
-        unit.textContent = field.unit;
+        unit.textContent = displayUnit;
         controlWrap.appendChild(unit);
     }
 
@@ -460,16 +833,55 @@ function createFluidTemperatureRow(value) {
     input.type = 'number';
     input.step = 'any';
     input.className = 'fluid-task-input';
-    input.value = Number.isFinite(parseFloat(value)) ? value : '';
+    const field = { key: 'temp', label: 'Temperature', unit: 'deg C', digits: 3 };
+    const displayValue = getFluidDisplayValue('temp', value, field);
+    input.value = Number.isFinite(parseFloat(displayValue)) ? displayValue : '';
     input.dataset.fluidControl = 'temp';
+    input.dataset.quantity = 'temperature';
+    input.dataset.baseUnit = 'deg C';
 
     const unit = document.createElement('span');
     unit.className = 'fluid-field-unit';
-    unit.textContent = 'deg C';
+    unit.textContent = getFluidDisplayUnit('temp', field);
 
     control.append(input, unit);
     row.append(label, control);
     return row;
+}
+
+function createBasisSetupNotice() {
+    const settings = typeof getSimulationSettings === 'function' ? getSimulationSettings() : null;
+    const shouldShow = fluidBasisSetupPrompt || !settings?.basisConfirmed || settings?.basisDirty;
+    if (!shouldShow) return null;
+
+    const notice = document.createElement('div');
+    notice.className = `fluid-basis-setup-notice${settings?.basisDirty ? ' fluid-basis-setup-dirty' : ''}`;
+    const title = document.createElement('strong');
+    title.textContent = settings?.basisDirty ? 'Basis changed after confirmation' : 'Set calculation basis first';
+    const text = document.createElement('span');
+    text.textContent = fluidBasisSetupPrompt
+        || settings?.dirtyReason
+        || 'Choose Fluid Basis and Unit Standard before adding or evaluating objects.';
+    notice.append(title, text);
+    return notice;
+}
+
+function createBasisApplyBar() {
+    const bar = document.createElement('div');
+    bar.className = 'fluid-basis-apply-bar';
+    const status = document.createElement('span');
+    const settings = typeof getSimulationSettings === 'function' ? getSimulationSettings() : null;
+    status.textContent = settings?.basisConfirmed && !settings?.basisDirty
+        ? 'Basis is confirmed for the current simulation.'
+        : 'Confirm this basis to start or continue modeling.';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fluid-basis-apply-btn';
+    button.dataset.fluidAction = 'confirm-basis';
+    button.textContent = settings?.basisDirty ? 'Reconfirm Basis' : 'Apply Basis / Start Modeling';
+    bar.append(status, button);
+    return bar;
 }
 
 function createFluidInputCard(fluidNode, trace) {
@@ -481,10 +893,18 @@ function createFluidInputCard(fluidNode, trace) {
     const heading = document.createElement('h3');
     heading.textContent = 'Input Basis';
     card.appendChild(heading);
+    const setupNotice = createBasisSetupNotice();
+    if (setupNotice) card.appendChild(setupNotice);
 
     const fields = document.createElement('div');
     fields.className = 'fluid-field-list';
 
+    if (typeof UNIT_STANDARD_OPTIONS !== 'undefined' && typeof getUnitStandard === 'function') {
+        fields.appendChild(createFluidSelectRow('Unit Standard', 'unitStandard', getUnitStandard(), UNIT_STANDARD_OPTIONS.map(option => ({
+            value: option,
+            label: option
+        }))));
+    }
     fields.appendChild(createFluidSelectRow('Input Mode', 'inputMode', props.inputMode || 'Basic', [
         { value: 'Basic', label: 'Basic' },
         { value: 'Advanced', label: 'Advanced' }
@@ -525,7 +945,7 @@ function createFluidInputCard(fluidNode, trace) {
         <strong data-fluid-meta="traceStatus">${escapeTaskHtml(trace.status || '-')}</strong>
     `;
 
-    card.append(fields, method);
+    card.append(fields, method, createBasisApplyBar());
     return card;
 }
 
@@ -536,7 +956,11 @@ function createMetricCard(label, value, unit, digits, key) {
     labelEl.textContent = label;
     const valueEl = document.createElement('strong');
     valueEl.dataset.fluidMetric = key;
-    valueEl.textContent = formatFluidTaskValue(value, unit, digits);
+    const field = getFluidFieldDefinition(key);
+    const displayField = key === 'temp'
+        ? { key: 'temp', label: 'Temperature', unit: 'deg C', digits }
+        : { ...field, label, unit, digits };
+    valueEl.textContent = formatFluidTaskFieldValue(key, value, displayField);
     valueEl.title = Number.isFinite(parseFloat(value)) ? String(value) : '';
     item.append(labelEl, valueEl);
     return item;
@@ -617,7 +1041,9 @@ function renderFluidEquationCard(card, trace) {
         substitution.textContent = step.substitution || '-';
         const result = document.createElement('strong');
         result.className = 'fluid-equation-result';
-        result.textContent = formatFluidTaskValue(step.result, step.unit || '', step.digits ?? 3);
+        result.textContent = typeof formatDisplayUnitValueByUnit === 'function'
+            ? formatDisplayUnitValueByUnit(step.result, step.unit || '', step.digits ?? 3, step.title || '', step.title || '')
+            : formatFluidTaskValue(step.result, step.unit || '', step.digits ?? 3);
         item.append(title, reference, formula, substitution, result);
         steps.appendChild(item);
     });
@@ -639,7 +1065,7 @@ function refreshFluidBasisTask() {
         const key = el.dataset.fluidValue;
         const field = getFluidFieldDefinition(key);
         const value = fluidNode.props[key];
-        el.textContent = formatFluidTaskValue(value, field.unit, field.digits);
+        el.textContent = formatFluidTaskFieldValue(key, value, field);
         el.title = Number.isFinite(parseFloat(value)) ? String(value) : '';
     });
 
@@ -677,8 +1103,22 @@ function handleFluidTaskInput(e) {
 
     const key = target.dataset.fluidControl;
     const props = globalModel.FLUID.props;
+    if (key === 'unitStandard') {
+        captureTaskWindowEdit(target);
+        if (typeof setUnitStandard === 'function') setUnitStandard(target.value);
+        renderFluidBasisTaskWindow();
+        return;
+    }
+
     const isTextValue = key === 'fluidName' || key === 'inputMode';
-    const value = isTextValue ? target.value : parseFloat(target.value);
+    const rawNumber = parseFloat(target.value);
+    const field = getFluidFieldDefinition(key);
+    const quantity = target.dataset.quantity || '';
+    const value = isTextValue
+        ? target.value
+        : (quantity && typeof convertFromDisplay === 'function'
+            ? convertFromDisplay(rawNumber, quantity)
+            : getFluidInternalInputValue(key, rawNumber, field));
     captureTaskWindowEdit(target);
 
     if (!isTextValue && !Number.isFinite(value)) return;
@@ -699,6 +1139,17 @@ function handleFluidTaskInput(e) {
 
     runFluidBasisUpdate(key);
     refreshFluidBasisTask();
+}
+
+function handleFluidTaskAction(e) {
+    const actionTarget = e.target.closest('[data-fluid-action]');
+    if (!actionTarget) return;
+    if (actionTarget.dataset.fluidAction === 'confirm-basis') {
+        e.preventDefault();
+        if (typeof confirmBasisSetup === 'function') confirmBasisSetup();
+        fluidBasisSetupPrompt = null;
+        renderFluidBasisTaskWindow();
+    }
 }
 
 function createFluidBasisTaskRoot() {
@@ -735,6 +1186,7 @@ function createFluidBasisTaskRoot() {
     root.append(grid, traceLayout);
     root.addEventListener('input', handleFluidTaskInput);
     root.addEventListener('change', handleFluidTaskInput);
+    root.addEventListener('click', handleFluidTaskAction);
     root.addEventListener('blur', (e) => {
         if (e.target?.dataset?.fluidControl) releaseTaskWindowEdit(e.target);
     }, true);
@@ -749,10 +1201,20 @@ function renderFluidBasisTaskWindow() {
     document.body.classList.add('fluid-basis-task-open');
 }
 
-function openFluidBasisTaskWindow() {
+function openFluidBasisTaskWindow(options = {}) {
     if (!globalModel.FLUID) return;
     globalModel.FLUID.name = 'Fluid Basis';
+    fluidBasisSetupPrompt = options.reason || null;
     renderFluidBasisTaskWindow();
+}
+
+function ensureBasisConfirmedBeforeModeling(message) {
+    if (typeof isBasisConfirmed === 'function' && isBasisConfirmed()) return true;
+    openFluidBasisTaskWindow({
+        setupRequired: true,
+        reason: message || 'Set Fluid Basis and Unit Standard before adding equipment.'
+    });
+    return false;
 }
 
 function getSourceMapDigits(row) {

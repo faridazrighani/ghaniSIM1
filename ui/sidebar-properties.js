@@ -1,9 +1,7 @@
 function isSidebarEditActive() {
     const active = document.activeElement;
     return !!(active && active.closest && (
-        active.closest('#propTableBody')
-        || active.closest('#pumpPropertiesBody')
-        || active.closest('#pipeTaskPropTableBody')
+        active.closest('#pipeTaskPropTableBody')
         || active.closest('#taskWindowBody')
     ) && active.matches('input, select, textarea'));
 }
@@ -17,9 +15,44 @@ function setSidebarReadout(key, value, unit = '') {
         });
         return;
     }
-    const displayValue = formatNumericReadout(value);
+    const formatted = typeof formatDisplayUnitValueByUnit === 'function'
+        ? formatDisplayUnitValueByUnit(value, unit, 3, key, key)
+        : null;
+    const displayValue = formatted || formatNumericReadout(value) + (unit ? ' ' + unit : '');
     elements.forEach(el => {
-        el.textContent = displayValue + (unit ? ' ' + unit : '');
+        el.textContent = displayValue;
+    });
+}
+
+function setTankSourceFeedFlowBreakdownReadout(sourceFeedFlows = []) {
+    const elements = document.querySelectorAll('[data-key="tank-source-feed-breakdown"]');
+    if (!elements.length) return;
+
+    const html = typeof renderTankSourceFeedFlowBreakdown === 'function'
+        ? renderTankSourceFeedFlowBreakdown(sourceFeedFlows)
+        : (Array.isArray(sourceFeedFlows) && sourceFeedFlows.length
+            ? sourceFeedFlows.map(row => `
+                <div class="tank-source-feed-row">
+                    <span>${escapeHtml(row.sourceId || '-')}</span>
+                    <strong>${escapeHtml(formatTraceDisplayValue(row.flow, 'm3/h'))}</strong>
+                </div>
+            `).join('')
+            : '<div class="tank-source-feed-empty">-</div>');
+
+    elements.forEach(el => {
+        el.innerHTML = html;
+    });
+}
+
+function updateTankCalculationTraceReadout(tank) {
+    document.querySelectorAll('[data-key="tank-calculation-trace-body"]').forEach(traceBody => {
+        const fluidProps = typeof globalModel !== 'undefined' ? (globalModel.FLUID?.props || {}) : {};
+        const trace = typeof buildTankCalculationTrace === 'function'
+            ? buildTankCalculationTrace(tank, fluidProps, tank?.results || {})
+            : tank?.results?.calculationTrace;
+        if (typeof renderTankCalculationTraceReport === 'function') {
+            traceBody.innerHTML = renderTankCalculationTraceReport(trace);
+        }
     });
 }
 
@@ -64,6 +97,15 @@ function formatEngineeringValue(value, digits = 2) {
     return number.toFixed(digits);
 }
 
+function formatInputDisplayValue(value) {
+    const number = parseFloat(value);
+    if (!Number.isFinite(number)) return value;
+    const abs = Math.abs(number);
+    if (abs > 0 && abs < 0.000001) return number.toPrecision(8);
+    const digits = abs >= 100000 ? 3 : 8;
+    return number.toFixed(digits).replace(/\.?0+$/, '');
+}
+
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({
         '&': '&amp;',
@@ -76,6 +118,9 @@ function escapeHtml(value) {
 
 function formatTraceDisplayValue(value, unit = '') {
     if (value === null || value === undefined || value === '') return '-';
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, 3, '', unit);
+    }
     const display = formatReadoutValue(value);
     return `${display}${unit && display !== '-' ? ' ' + unit : ''}`;
 }
@@ -102,6 +147,195 @@ function renderPipeTraceStepRows(steps = []) {
             <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
         </tr>
     `).join('');
+}
+
+function formatPipeMoodySci(value) {
+    const number = parseFloat(value);
+    if (!Number.isFinite(number) || number <= 0) return '-';
+    const exponent = Math.floor(Math.log10(number));
+    const mantissa = number / Math.pow(10, exponent);
+    return Math.abs(mantissa - 1) < 0.01
+        ? `1e${exponent}`
+        : `${Number(mantissa.toFixed(1))}e${exponent}`;
+}
+
+function formatPipeMoodyNumber(value, digits = 4) {
+    const number = parseFloat(value);
+    if (!Number.isFinite(number)) return '-';
+    if (Math.abs(number) >= 10000 || (Math.abs(number) > 0 && Math.abs(number) < 0.0001)) {
+        return number.toExponential(3);
+    }
+    return Number(number.toFixed(digits)).toString();
+}
+
+function renderPipeMoodyChart(moody) {
+    if (!moody) return '';
+
+    const markers = moody.markers || [];
+    const primaryMarker = markers[0] || null;
+    const curveColors = ['#1d4ed8', '#0f766e', '#64748b', '#a16207', '#4d7c0f', '#be123c', '#7c3aed'];
+    const markerColors = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0f766e'];
+    const width = 680;
+    const height = 320;
+    const margin = { left: 58, right: 24, top: 22, bottom: 44 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const xMin = moody.xMin || 1000;
+    const xMax = moody.xMax || 100000000;
+    const yMin = moody.yMin || 0.008;
+    const yMax = moody.yMax || 0.12;
+    const xMinLog = Math.log10(xMin);
+    const xMaxLog = Math.log10(xMax);
+    const yMinLog = Math.log10(yMin);
+    const yMaxLog = Math.log10(yMax);
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const scaleX = reynolds => margin.left + ((Math.log10(clamp(reynolds, xMin, xMax)) - xMinLog) / (xMaxLog - xMinLog)) * plotWidth;
+    const scaleY = friction => margin.top + ((yMaxLog - Math.log10(clamp(friction, yMin, yMax))) / (yMaxLog - yMinLog)) * plotHeight;
+    const pathFromPoints = points => (points || [])
+        .filter(point => Number.isFinite(point.reynolds) && Number.isFinite(point.frictionFactor))
+        .map((point, index) => `${index === 0 ? 'M' : 'L'} ${scaleX(point.reynolds).toFixed(2)} ${scaleY(point.frictionFactor).toFixed(2)}`)
+        .join(' ');
+
+    const xTicks = [1000, 10000, 100000, 1000000, 10000000, 100000000];
+    const yTicks = [0.01, 0.02, 0.03, 0.05, 0.08, 0.1];
+    const transitionX = scaleX(moody.laminarLimit || 2300);
+    const transitionWidth = scaleX(moody.turbulentLimit || 4000) - transitionX;
+    const laminarPath = pathFromPoints(moody.laminarCurve?.points || []);
+    const turbulentPaths = (moody.curves || []).map((curve, index) => {
+        const path = pathFromPoints(curve.points || []);
+        if (!path) return '';
+        return `
+            <path class="pipe-moody-curve" d="${path}" stroke="${curveColors[index % curveColors.length]}">
+                <title>${escapeHtml(curve.label || '-')}</title>
+            </path>
+        `;
+    }).join('');
+
+    const markerGuides = markers.map((marker, index) => {
+        const x = scaleX(marker.reynolds);
+        const y = scaleY(marker.frictionFactor);
+        const color = markerColors[index % markerColors.length];
+        return `
+            <g class="pipe-moody-guide" style="--guide-color: ${color}">
+                <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${(margin.top + plotHeight).toFixed(2)}"></line>
+                <line x1="${margin.left}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}"></line>
+            </g>
+        `;
+    }).join('');
+
+    const markerNodes = markers.map((marker, index) => {
+        const x = scaleX(marker.reynolds);
+        const y = scaleY(marker.frictionFactor);
+        const color = markerColors[index % markerColors.length];
+        const calloutX = clamp(x + 14, margin.left + 6, margin.left + plotWidth - 118);
+        const calloutY = clamp(y - 25, margin.top + 6, margin.top + plotHeight - 35);
+        return `
+            <g class="pipe-moody-callout" transform="translate(${calloutX.toFixed(2)} ${calloutY.toFixed(2)})">
+                <rect width="112" height="29" rx="6"></rect>
+                <text x="8" y="12">${escapeHtml(marker.name || `Segment ${index + 1}`)}</text>
+                <text x="8" y="24">f ${escapeHtml(formatPipeMoodyNumber(marker.frictionFactor, 5))} | Re ${escapeHtml(formatPipeMoodySci(marker.reynolds))}</text>
+            </g>
+            <g class="pipe-moody-marker" transform="translate(${x.toFixed(2)} ${y.toFixed(2)})">
+                <circle class="pipe-moody-marker-halo" r="12" fill="${color}"></circle>
+                <circle class="pipe-moody-marker-dot" r="6.2" fill="${color}"></circle>
+                <text y="3.4">${index + 1}</text>
+                <title>${escapeHtml(marker.name)} | Re ${formatPipeMoodyNumber(marker.reynolds, 0)} | Darcy f ${formatPipeMoodyNumber(marker.frictionFactor, 5)} | eps/D ${formatPipeMoodyNumber(marker.relRoughness, 6)}</title>
+            </g>
+        `;
+    }).join('');
+
+    const markerSummary = markers.length
+        ? markers.map((marker, index) => `
+            <span class="pipe-moody-marker-chip" style="--marker-color: ${markerColors[index % markerColors.length]}">
+                <b>${index + 1}</b>
+                ${escapeHtml(marker.name)}:
+                Re ${escapeHtml(formatPipeMoodyNumber(marker.reynolds, 0))},
+                eps/D ${escapeHtml(formatPipeMoodyNumber(marker.relRoughness, 6))},
+                f ${escapeHtml(formatPipeMoodyNumber(marker.frictionFactor, 5))},
+                ${escapeHtml(marker.flowRegime || '-')}
+            </span>
+        `).join('')
+        : '<span class="pipe-moody-empty">Moody chart needs positive solved pipe flow.</span>';
+
+    const curveLegend = (moody.curves || []).map((curve, index) => `
+        <span class="pipe-moody-legend-item">
+            <i style="background: ${curveColors[index % curveColors.length]}"></i>${escapeHtml(curve.label || '-')}
+        </span>
+    `).join('');
+    const statusText = primaryMarker ? primaryMarker.flowRegime || '-' : 'Awaiting solved flow';
+    const statCards = [
+        ['Primary Re', primaryMarker ? formatPipeMoodyNumber(primaryMarker.reynolds, 0) : '-'],
+        ['Darcy f', primaryMarker ? formatPipeMoodyNumber(primaryMarker.frictionFactor, 5) : '-'],
+        ['eps/D', primaryMarker ? formatPipeMoodyNumber(primaryMarker.relRoughness, 6) : '-'],
+        ['Regime', statusText]
+    ];
+
+    return `
+        <div class="pipe-trace-block pipe-moody-block">
+            <h4>Moody Chart / Friction Factor Check</h4>
+            <div class="pipe-moody-card">
+                <div class="pipe-moody-header">
+                    <div class="pipe-moody-title">
+                        <span>Friction Factor Audit</span>
+                        <strong>Moody Chart</strong>
+                    </div>
+                    <div class="pipe-moody-stat-grid">
+                        ${statCards.map(([label, value]) => `
+                            <span class="pipe-moody-stat">
+                                <span>${escapeHtml(label)}</span>
+                                <strong>${escapeHtml(value)}</strong>
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="pipe-moody-chart-wrap">
+                    <svg class="pipe-moody-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Moody chart friction factor check">
+                        <defs>
+                            <linearGradient id="pipeMoodyBg" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#fbfdff"></stop>
+                                <stop offset="55%" stop-color="#eef6fc"></stop>
+                                <stop offset="100%" stop-color="#fff7ed"></stop>
+                            </linearGradient>
+                            <linearGradient id="pipeMoodyPlot" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#ffffff"></stop>
+                                <stop offset="100%" stop-color="#f8fbfd"></stop>
+                            </linearGradient>
+                        </defs>
+                        <rect class="pipe-moody-bg" x="0" y="0" width="${width}" height="${height}"></rect>
+                        <rect class="pipe-moody-plot-bg" x="${margin.left}" y="${margin.top}" width="${plotWidth}" height="${plotHeight}"></rect>
+                        <rect class="pipe-moody-transition" x="${transitionX.toFixed(2)}" y="${margin.top}" width="${transitionWidth.toFixed(2)}" height="${plotHeight}"></rect>
+                        ${xTicks.map(tick => `
+                            <line class="pipe-moody-grid" x1="${scaleX(tick).toFixed(2)}" y1="${margin.top}" x2="${scaleX(tick).toFixed(2)}" y2="${margin.top + plotHeight}"></line>
+                            <text class="pipe-moody-axis-label pipe-moody-x-label" x="${scaleX(tick).toFixed(2)}" y="${height - 16}">${formatPipeMoodySci(tick)}</text>
+                        `).join('')}
+                        ${yTicks.map(tick => `
+                            <line class="pipe-moody-grid" x1="${margin.left}" y1="${scaleY(tick).toFixed(2)}" x2="${margin.left + plotWidth}" y2="${scaleY(tick).toFixed(2)}"></line>
+                            <text class="pipe-moody-axis-label pipe-moody-y-label" x="${margin.left - 8}" y="${scaleY(tick).toFixed(2)}">${formatPipeMoodyNumber(tick, 3)}</text>
+                        `).join('')}
+                        <path class="pipe-moody-laminar" d="${laminarPath}"></path>
+                        ${turbulentPaths}
+                        ${markerGuides}
+                        <line class="pipe-moody-axis" x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${margin.left + plotWidth}" y2="${margin.top + plotHeight}"></line>
+                        <line class="pipe-moody-axis" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}"></line>
+                        <text class="pipe-moody-axis-title" x="${margin.left + plotWidth / 2}" y="${height - 2}">Reynolds Number</text>
+                        <text class="pipe-moody-axis-title pipe-moody-y-title" x="14" y="${margin.top + plotHeight / 2}">Darcy f</text>
+                        <text class="pipe-moody-band-label" x="${transitionX + transitionWidth / 2}" y="${margin.top + 14}">Transition</text>
+                        ${markerNodes}
+                    </svg>
+                </div>
+                <div class="pipe-moody-marker-list">
+                    ${markerSummary}
+                </div>
+                <div class="pipe-moody-note">
+                    ${escapeHtml(moody.note || 'Darcy friction factor chart.')}
+                </div>
+                <div class="pipe-moody-legend">
+                    <span class="pipe-moody-legend-item"><i class="pipe-moody-laminar-swatch"></i>Laminar f = 64/Re</span>
+                    ${curveLegend}
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function renderPipeCalculationTraceReport(trace) {
@@ -144,6 +378,7 @@ function renderPipeCalculationTraceReport(trace) {
                     <span>${escapeHtml(segment.flowRegime || '-')}</span>
                 </div>
                 <div class="pipe-trace-metric-grid pipe-trace-mini-grid">
+                    ${renderPipeTraceMetric('Pipe Size Basis', dataSources.size?.status || '-', '')}
                     ${renderPipeTraceMetric('Material Basis', dataSources.material?.status || '-', '')}
                     ${renderPipeTraceMetric('Fitting Basis', dataSources.fitting?.status || '-', '')}
                     ${renderPipeTraceMetric('z in', profile.startElevation, 'm')}
@@ -154,7 +389,7 @@ function renderPipeCalculationTraceReport(trace) {
                     ${renderPipeTraceMetric('HP Margin', profile.highPointVaporMargin, 'bar')}
                 </div>
                 <div class="pipe-trace-source-note">
-                    Roughness: ${escapeHtml(dataSources.material?.source || '-')} | Fitting K: ${escapeHtml(dataSources.fitting?.source || '-')}
+                    Pipe ID: ${escapeHtml(dataSources.size?.source || '-')} | Roughness: ${escapeHtml(dataSources.material?.source || '-')} | Fitting K: ${escapeHtml(dataSources.fitting?.source || '-')}
                 </div>
                 <div class="pipe-trace-table-scroll">
                     <table class="pipe-trace-table">
@@ -192,6 +427,13 @@ function renderPipeCalculationTraceReport(trace) {
                 ${totalMetrics.map(([label, value, unit]) => renderPipeTraceMetric(label, value, unit)).join('')}
             </div>
         </div>
+        <div class="pipe-trace-block">
+            <h4>Dependency Chain</h4>
+            <ol class="pipe-trace-list pipe-dependency-chain">
+                ${((trace.dependencyChain || []).length ? trace.dependencyChain : ['No pipe dependency chain available.']).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+            </ol>
+        </div>
+        ${renderPipeMoodyChart(trace.moody)}
         <div class="pipe-trace-block">
             <h4>Per Segment Calculation</h4>
             ${segmentBlocks || '<div class="pipe-trace-empty">No segment calculation is available until the pipe has positive solved flow.</div>'}
@@ -233,13 +475,14 @@ function refreshVisiblePipeCalculationTrace(nodeId) {
     const updatedAllowanceLoss = [...updatedDetails.values()].reduce((sum, result) => sum + result.allowanceLoss, 0);
     const updatedTotalK = [...updatedDetails.values()].reduce((sum, result) => sum + result.minorLossK, 0);
     const updatedDataBasis = updatedDetails.size
-        ? [...new Set([...updatedDetails.values()].flatMap(result => [result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
+        ? [...new Set([...updatedDetails.values()].flatMap(result => [result.sizeSource?.status, result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
         : '-';
     const updatedFlowRegime = updatedDetails.size
         ? [...new Set([...updatedDetails.values()].map(result => result.flowRegime).filter(Boolean))].join(' / ')
         : '-';
     const updatedWarnings = [...new Set([
         ...((node.results?.warnings || []).filter(Boolean)),
+        ...(typeof getPipeValveCompatibilityWarnings === 'function' ? getPipeValveCompatibilityWarnings(nodeId, globalModel, connections) : []),
         ...[...updatedDetails.values()].map(result => result.regimeWarning).filter(Boolean)
     ])];
 
@@ -286,6 +529,7 @@ function refreshVisiblePipeCalculationTrace(nodeId) {
             highPointPressure: formatEngineeringValue(profile.highPointPressure, 2),
             highPointVaporMargin: formatEngineeringValue(profile.highPointVaporMargin, 2),
             basis: [
+                result.sizeSource?.status || '',
                 result.materialSource?.status || '',
                 result.fittingSource?.status || ''
             ].filter(Boolean).join('/') || '-'
@@ -313,16 +557,9 @@ function clearSelection() {
     document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
     currentSelectedNode = null;
     if (typeof closePipePropertiesTaskWindow === 'function') closePipePropertiesTaskWindow();
-    document.getElementById('propTableHeader').textContent = 'Select an Object';
-    document.getElementById('propTableBody').innerHTML = `
-        <tr>
-            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
-                Click on an equipment or stream on the canvas to view its properties here.
-            </td>
-        </tr>
-    `;
-    document.getElementById('editorHint').style.display = 'none';
-    renderPumpPropertiesSidebar(null);
+    if (typeof closeTankPropertiesTaskWindow === 'function') closeTankPropertiesTaskWindow();
+    if (typeof closeObjectPropertiesTaskWindow === 'function') closeObjectPropertiesTaskWindow();
+    if (typeof hideTaskWindowLauncher === 'function') hideTaskWindowLauncher();
 }
 
 function addPumpPropertiesRow(tbody, label, value, key, options = {}) {
@@ -333,6 +570,9 @@ function addPumpPropertiesRow(tbody, label, value, key, options = {}) {
         choices = []
     } = options;
     const tr = document.createElement('tr');
+    if (tbody?.closest?.('.object-task-prop-table')) {
+        tr.className = 'pipe-task-field-row object-task-field-row pump-task-field-row';
+    }
     const tdLabel = document.createElement('td');
     tdLabel.className = 'prop-label';
     tdLabel.textContent = label;
@@ -342,8 +582,15 @@ function addPumpPropertiesRow(tbody, label, value, key, options = {}) {
 
     if (readonly) {
         if (key) tdValue.dataset.key = key;
-        const displayValue = formatReadoutValue(value);
-        tdValue.textContent = displayValue + (unit && displayValue !== '-' ? ' ' + unit : '');
+        const displayText = typeof formatDisplayUnitValueByUnit === 'function'
+            ? formatDisplayUnitValueByUnit(value, unit, 3, key, label)
+            : null;
+        if (displayText) {
+            tdValue.textContent = displayText;
+        } else {
+            const displayValue = formatReadoutValue(value);
+            tdValue.textContent = displayValue + (unit && displayValue !== '-' ? ' ' + unit : '');
+        }
     } else {
         let input;
         if (inputType === 'select') {
@@ -421,8 +668,15 @@ function addPumpEvaluationSummary(tbody, pump) {
         const value = document.createElement('strong');
         value.className = `prop-value ${card.className || ''}`.trim();
         if (card.key) value.dataset.key = card.key;
-        const displayValue = formatReadoutValue(card.value);
-        value.textContent = displayValue + (card.unit && displayValue !== '-' ? ' ' + card.unit : '');
+        const displayText = typeof formatDisplayUnitValueByUnit === 'function'
+            ? formatDisplayUnitValueByUnit(card.value, card.unit || '', 3, card.key || '', card.label)
+            : null;
+        if (displayText) {
+            value.textContent = displayText;
+        } else {
+            const displayValue = formatReadoutValue(card.value);
+            value.textContent = displayValue + (card.unit && displayValue !== '-' ? ' ' + card.unit : '');
+        }
         item.appendChild(label);
         item.appendChild(value);
         grid.appendChild(item);
@@ -465,8 +719,7 @@ function addPumpEngineeringNotes(tbody, pump) {
 }
 
 function formatPumpLossValue(value) {
-    const number = parseFloat(value);
-    return Number.isFinite(number) ? number.toFixed(3) : '-';
+    return formatTraceDisplayValue(value, 'm');
 }
 
 function getPumpSuctionLossBreakdownEntries(pump) {
@@ -538,8 +791,7 @@ function addPumpSuctionLossBreakdown(tbody, pump) {
 }
 
 function formatPumpTraceValue(value, unit = '') {
-    const displayValue = formatReadoutValue(value);
-    return displayValue + (unit && displayValue !== '-' ? ` ${unit}` : '');
+    return formatTraceDisplayValue(value, unit);
 }
 
 function addPumpTraceMetric(grid, labelText, value, unit = '') {
@@ -711,7 +963,7 @@ function renderPumpCalculationTraceContent(wrapper, pump) {
     if (!trace) {
         const empty = document.createElement('div');
         empty.className = 'pump-trace-empty';
-        empty.textContent = 'Calculation trace is available after the pump has a complete upstream SRC, downstream boundary, and solved NPSH evaluation.';
+        empty.textContent = 'Calculation trace is available after the pump has a complete upstream tank/SRC boundary, downstream boundary, and solved NPSH evaluation.';
         wrapper.appendChild(empty);
 
         const warnings = (pump?.results?.warnings || []).filter(Boolean);
@@ -751,8 +1003,7 @@ function addPumpCalculationTrace(tbody, pump) {
 }
 
 function formatFluidTraceUiValue(value, unit = '') {
-    const displayValue = formatReadoutValue(value);
-    return displayValue + (unit && displayValue !== '-' ? ` ${unit}` : '');
+    return formatTraceDisplayValue(value, unit);
 }
 
 function addFluidTraceBlock(parent, title) {
@@ -963,33 +1214,22 @@ function addFluidCalculationTrace(tbody, fluidNode) {
     tbody.appendChild(tr);
 }
 
-function renderPumpPropertiesSidebar(nodeId) {
-    const panel = document.getElementById('pumpPropertiesSidebar');
-    const header = document.getElementById('pumpPropertiesHeader');
-    const tbody = document.getElementById('pumpPropertiesBody');
+function renderPumpPropertiesSidebar(nodeId, targets = null, options = {}) {
+    const header = targets?.header;
+    const tbody = targets?.body;
     const node = nodeId ? globalModel[nodeId] : null;
 
-    if (!panel || !header || !tbody) return;
+    if (!targets || !header || !tbody) return;
 
-    if (!node || node.type !== 'pump') {
-        panel.hidden = true;
-        header.textContent = 'Select a Pump';
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
-                    Select a pump to view operating results and system residuals.
-                </td>
-            </tr>
-        `;
-        return;
-    }
+    if (!node || node.type !== 'pump') return;
 
     if (typeof normalizePumpProps === 'function') normalizePumpProps(node.props);
     if (typeof ensureNodeResults === 'function') ensureNodeResults(node);
 
-    panel.hidden = false;
-    header.textContent = node.name || nodeId;
-    tbody.innerHTML = '';
+    if (!options.append) {
+        header.textContent = node.name || nodeId;
+        tbody.innerHTML = '';
+    }
 
     addPumpPropertiesSection(tbody, 'Operating Results');
     addPumpPropertiesRow(tbody, 'Status', node.results.status, 'result-status');
@@ -1035,9 +1275,39 @@ function renderSidebar(nodeId) {
         return;
     }
 
-    renderPumpPropertiesSidebar(nodeId);
     if (node.type !== 'pipe' && typeof closePipePropertiesTaskWindow === 'function') {
         closePipePropertiesTaskWindow();
+    }
+    if (node.type !== 'tank' && typeof closeTankPropertiesTaskWindow === 'function') {
+        closeTankPropertiesTaskWindow();
+    }
+    if (['pipe', 'tank', 'fluid'].includes(node.type) && typeof closeObjectPropertiesTaskWindow === 'function') {
+        closeObjectPropertiesTaskWindow();
+    }
+
+    if (node.type === 'pipe'
+        && typeof isPipePropertiesTaskDismissed === 'function'
+        && isPipePropertiesTaskDismissed(nodeId)) {
+        if (typeof showPipePropertiesTaskNotice === 'function') {
+            showPipePropertiesTaskNotice(nodeId);
+        }
+        return;
+    }
+    if (node.type === 'tank'
+        && typeof isTankPropertiesTaskDismissed === 'function'
+        && isTankPropertiesTaskDismissed(nodeId)) {
+        if (typeof showTankPropertiesTaskNotice === 'function') {
+            showTankPropertiesTaskNotice(nodeId);
+        }
+        return;
+    }
+    if (!['pipe', 'tank', 'fluid'].includes(node.type)
+        && typeof isObjectPropertiesTaskDismissed === 'function'
+        && isObjectPropertiesTaskDismissed(nodeId)) {
+        if (typeof showObjectPropertiesTaskNotice === 'function') {
+            showObjectPropertiesTaskNotice(nodeId);
+        }
+        return;
     }
 
     const pipeTaskOpened = node.type === 'pipe'
@@ -1049,17 +1319,42 @@ function renderSidebar(nodeId) {
     if (pipeTaskOpened && typeof showPipePropertiesTaskNotice === 'function') {
         showPipePropertiesTaskNotice(nodeId);
     }
+    const tankTaskOpened = node.type === 'tank'
+        && typeof openTankPropertiesTaskWindow === 'function'
+        && openTankPropertiesTaskWindow(nodeId);
+    const tankTaskTargets = tankTaskOpened && typeof getTankPropertiesTaskTargets === 'function'
+        ? getTankPropertiesTaskTargets()
+        : null;
+    if (tankTaskOpened && typeof showTankPropertiesTaskNotice === 'function') {
+        showTankPropertiesTaskNotice(nodeId);
+    }
+    const objectTaskOpened = !['pipe', 'tank', 'fluid'].includes(node.type)
+        && typeof openObjectPropertiesTaskWindow === 'function'
+        && openObjectPropertiesTaskWindow(nodeId);
+    const objectTaskTargets = objectTaskOpened && typeof getObjectPropertiesTaskTargets === 'function'
+        ? getObjectPropertiesTaskTargets()
+        : null;
+    if (objectTaskOpened && typeof showObjectPropertiesTaskNotice === 'function') {
+        showObjectPropertiesTaskNotice(nodeId);
+    }
+    const taskTargets = pipeTaskTargets || tankTaskTargets || objectTaskTargets;
 
-    const headerEl = pipeTaskTargets?.header || document.getElementById('propTableHeader');
+    const headerEl = taskTargets?.header;
+    if (!headerEl) return;
     headerEl.textContent = node.name || nodeId;
 
-    const tbody = pipeTaskTargets?.body || document.getElementById('propTableBody');
+    const tbody = taskTargets?.body;
+    if (!tbody) return;
     tbody.innerHTML = ''; // clear
     
     // Helper to add rows
     const addRow = (label, value, key, isReadOnly = false, unit = '', inputType = null, options = []) => {
         const tr = document.createElement('tr');
-        if (pipeTaskTargets && node.type === 'pipe') tr.className = 'pipe-task-field-row';
+        if (taskTargets) {
+            tr.className = node.type === 'tank'
+                ? 'pipe-task-field-row tank-task-field-row'
+                : (node.type === 'pipe' ? 'pipe-task-field-row' : 'pipe-task-field-row object-task-field-row');
+        }
         if (key) tr.dataset.propKey = key;
         
         const tdLabel = document.createElement('td');
@@ -1068,11 +1363,17 @@ function renderSidebar(nodeId) {
         
         const tdVal = document.createElement('td');
         tdVal.className = 'prop-value';
+        const shouldFormatWithUnit = !!unit && typeof getDisplayValueWithUnit === 'function';
+        const displayMeta = shouldFormatWithUnit
+            ? getDisplayValueWithUnit(value, node.type, key, label, unit)
+            : { value, unit };
+        const displayUnit = displayMeta.unit || unit;
+        const displayValueRaw = displayMeta.value;
         
         if (isReadOnly) {
             if (key) tdVal.dataset.key = key;
-            const displayValue = formatReadoutValue(value);
-            tdVal.textContent = displayValue + (unit && displayValue !== '-' ? ' ' + unit : '');
+            const displayValue = formatReadoutValue(displayValueRaw);
+            tdVal.textContent = displayValue + (displayUnit && displayValue !== '-' ? ' ' + displayUnit : '');
         } else {
             let inp;
             if (inputType === 'select') {
@@ -1088,19 +1389,27 @@ function renderSidebar(nodeId) {
                 });
             } else {
                 inp = document.createElement('input');
-                inp.type = typeof value === 'number' ? 'number' : 'text';
+                inp.type = inputType === 'number' || typeof value === 'number' ? 'number' : 'text';
                 inp.className = 'prop-input-field';
-                inp.value = value;
+                inp.value = Number.isFinite(parseFloat(displayValueRaw)) && inp.type === 'number'
+                    ? formatInputDisplayValue(displayValueRaw)
+                    : value;
             }
             inp.dataset.key = key;
             inp.dataset.node = nodeId;
+            inp.dataset.unit = unit || '';
+            inp.dataset.displayUnit = displayUnit || '';
+            inp.dataset.quantity = displayMeta.quantity || '';
             inp.addEventListener('blur', () => releaseSidebarEditCapture(inp));
             
             // On input change, update model and resimulate
             inp.addEventListener(inputType === 'select' ? 'change' : 'input', (e) => {
                 const k = e.target.dataset.key;
                 const n = e.target.dataset.node;
-                const v = e.target.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value;
+                const rawInputValue = e.target.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value;
+                const v = e.target.type === 'number' && e.target.dataset.quantity && typeof getInternalValueFromDisplay === 'function'
+                    ? getInternalValueFromDisplay(rawInputValue, globalModel[n].type, k, label, e.target.dataset.unit || '')
+                    : rawInputValue;
                 captureSidebarEdit(e.target);
                 const previousValue = globalModel[n].props[k];
                 globalModel[n].props[k] = v;
@@ -1253,11 +1562,55 @@ function renderSidebar(nodeId) {
                 if (globalModel[n].type === 'valve' && k === 'valveType' && typeof getValveDefaultK === 'function') {
                     const previousDefaultK = getValveDefaultK(previousValue);
                     const currentK = parseFloat(globalModel[n].props.kValue);
+                    const previousProfile = typeof getValveDefaultProfile === 'function' ? getValveDefaultProfile(previousValue) : null;
+                    const nextProfile = typeof getValveDefaultProfile === 'function' ? getValveDefaultProfile(v) : null;
                     if (!Number.isFinite(currentK) || Math.abs(currentK - previousDefaultK) < 1e-9) {
                         globalModel[n].props.kValue = getValveDefaultK(v);
                     }
+                    if (previousProfile && nextProfile) {
+                        ['boreType', 'pressureClass', 'endConnection', 'bodyMaterial', 'reducerExpanderBasis'].forEach(profileKey => {
+                            if (!globalModel[n].props[profileKey] || globalModel[n].props[profileKey] === previousProfile[profileKey]) {
+                                globalModel[n].props[profileKey] = nextProfile[profileKey];
+                            }
+                        });
+                    }
+                    if (v === 'Control Valve' && previousValue !== 'Control Valve') {
+                        if (!globalModel[n].props.lossModel) {
+                            globalModel[n].props.lossModel = typeof VALVE_LOSS_MODEL_CV !== 'undefined' ? VALVE_LOSS_MODEL_CV : 'Cv';
+                        }
+                        if (!globalModel[n].props.flowCharacteristic || globalModel[n].props.flowCharacteristic === 'Linear') {
+                            globalModel[n].props.flowCharacteristic = typeof VALVE_CHAR_EQUAL_PERCENTAGE !== 'undefined' ? VALVE_CHAR_EQUAL_PERCENTAGE : 'Equal percentage';
+                        }
+                    }
                     renderSidebar(n);
                     updateSimulation({ renderSidebarAfter: false });
+                    return;
+                }
+
+                if (['valve', 'checkValve'].includes(globalModel[n].type) && [
+                    'boreType',
+                    'boreDiameter',
+                    'pressureClass',
+                    'endConnection',
+                    'bodyMaterial',
+                    'lossModel',
+                    'flowCharacteristic',
+                    'cv',
+                    'effectiveCv',
+                    'kValue',
+                    'equivLength',
+                    'diameter',
+                    'reducerExpanderBasis',
+                    'opening',
+                    'crackingPressure',
+                    'reverseFlow'
+                ].includes(k)) {
+                    if (typeof normalizeValveAuditProps === 'function') normalizeValveAuditProps(globalModel[n]);
+                    if (typeof updateValveCompatibilityResult === 'function') {
+                        updateValveCompatibilityResult(n, globalModel, connections, { syncDiameter: false });
+                    }
+                    updateSimulation({ renderSidebarAfter: false });
+                    if (typeof updateValveReadout === 'function') updateValveReadout(n);
                     return;
                 }
 
@@ -1317,6 +1670,29 @@ function renderSidebar(nodeId) {
                     return;
                 }
 
+                if (['separator', 'verticalVessel'].includes(globalModel[n].type) && [
+                    'pressure',
+                    'pressureInputBasis',
+                    'pressureDrop',
+                    'residenceTime',
+                    'elevation',
+                    'liquidLevel',
+                    'inletNozzleElevation',
+                    'outletNozzleElevation'
+                ].includes(k)) {
+                    if (typeof updateSeparatorReadout === 'function') updateSeparatorReadout(n);
+                    if (k === 'pressureInputBasis') {
+                        renderSidebar(n);
+                    }
+                    updateSimulation({ renderSidebarAfter: false });
+                    return;
+                }
+
+                if (globalModel[n].type === 'heatExchanger' && ['duty', 'pressureDrop', 'outletTemp'].includes(k)) {
+                    updateSimulation({ renderSidebarAfter: false });
+                    return;
+                }
+
                 if (globalModel[n].type === 'sink' && ['boundaryMode', 'pressure', 'pressureInputBasis', 'pressureBasis', 'demandFlow'].includes(k)) {
                     if (typeof normalizeSinkProps === 'function') normalizeSinkProps(globalModel[n]);
                     if (typeof updateSinkReadout === 'function') updateSinkReadout(n);
@@ -1340,8 +1716,11 @@ function renderSidebar(nodeId) {
             });
             
             tdVal.appendChild(inp);
-            if (unit) {
-                tdVal.appendChild(document.createTextNode(' ' + unit));
+            if (displayUnit) {
+                const unitSpan = document.createElement('span');
+                unitSpan.className = 'prop-unit';
+                unitSpan.textContent = displayUnit;
+                tdVal.appendChild(unitSpan);
             }
         }
         
@@ -1559,6 +1938,17 @@ function renderSidebar(nodeId) {
         } else {
             addRow('NPSHr Source', typeof PUMP_NPSHR_SOURCE_CURVE !== 'undefined' ? PUMP_NPSHR_SOURCE_CURVE : 'Manufacturer/Test Curve', 'npshrSourceMode', true);
             // Advanced curve table
+            const pumpFlowUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('flow') : 'm3/h';
+            const pumpHeadUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('head') : 'm';
+            const displayPumpCurveValue = (value, quantity, digits = 3) => {
+                const display = typeof convertToDisplay === 'function' ? convertToDisplay(value, quantity) : value;
+                return formatEngineeringValue(display, digits);
+            };
+            const internalPumpCurveValue = (value, quantity) => {
+                const parsed = parseFloat(value);
+                if (!Number.isFinite(parsed)) return 0;
+                return typeof convertFromDisplay === 'function' ? convertFromDisplay(parsed, quantity) : parsed;
+            };
             const tr = document.createElement('tr');
             const td = document.createElement('td');
             td.colSpan = 2;
@@ -1574,10 +1964,10 @@ function renderSidebar(nodeId) {
                         <table class="segment-table" id="pumpCurveTable">
                             <thead>
                                 <tr>
-                                    <th>Flow</th>
-                                    <th>Head</th>
+                                    <th>Flow (${escapeHtml(pumpFlowUnit)})</th>
+                                    <th>Head (${escapeHtml(pumpHeadUnit)})</th>
                                     <th>Eff %</th>
-                                    <th>NPSHr</th>
+                                    <th>NPSHr (${escapeHtml(pumpHeadUnit)})</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -1587,10 +1977,10 @@ function renderSidebar(nodeId) {
             node.props.curveData.forEach((pt, i) => {
                 curveHtml += `
                     <tr>
-                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="flow" value="${pt.flow}"></td>
-                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="head" value="${pt.head}"></td>
+                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="flow" value="${displayPumpCurveValue(pt.flow, 'flow', 3)}"></td>
+                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="head" value="${displayPumpCurveValue(pt.head, 'head', 3)}"></td>
                         <td><input type="number" class="segment-input" data-idx="${i}" data-field="eff" value="${pt.eff}"></td>
-                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="npshr" value="${pt.npshr}"></td>
+                        <td><input type="number" class="segment-input" data-idx="${i}" data-field="npshr" value="${displayPumpCurveValue(pt.npshr, 'head', 3)}"></td>
                         <td><button class="btn-remove-segment" data-idx="${i}" data-node="${nodeId}">X</button></td>
                     </tr>
                 `;
@@ -1612,7 +2002,10 @@ function renderSidebar(nodeId) {
                     const idx = parseInt(e.target.dataset.idx);
                     const field = e.target.dataset.field;
                     captureSidebarEdit(e.target);
-                    node.props.curveData[idx][field] = parseFloat(e.target.value) || 0;
+                    const quantity = field === 'flow' ? 'flow' : (field === 'head' || field === 'npshr' ? 'head' : null);
+                    node.props.curveData[idx][field] = quantity
+                        ? internalPumpCurveValue(e.target.value, quantity)
+                        : parseFloat(e.target.value) || 0;
                     updateSimulation({ renderSidebarAfter: false });
                 });
             });
@@ -1656,6 +2049,8 @@ function renderSidebar(nodeId) {
         if (node.props.routeStyle === undefined) node.props.routeStyle = 'Straight';
         normalizePipeProps(node.props);
         addRow('Pipe Routing', node.props.routeStyle, 'routeStyle', false, '', 'select', ['Straight', 'Elbow']);
+        addRow('Pipe Rating/Class', node.props.pressureClass || 'ASME Class 150', 'pressureClass', false, '', 'select', typeof PIPE_PRESSURE_CLASS_OPTIONS !== 'undefined' ? PIPE_PRESSURE_CLASS_OPTIONS : ['ASME Class 150', 'ASME Class 300', 'ASME Class 600', 'PN16', 'User-defined']);
+        addRow('End Connection Basis', node.props.endConnection || 'By piping class / compatible', 'endConnection', false, '', 'select', typeof PIPE_END_CONNECTION_OPTIONS !== 'undefined' ? PIPE_END_CONNECTION_OPTIONS : ['By piping class / compatible', 'Flanged RF', 'Butt weld', 'Threaded NPT', 'Socket weld', 'User-defined']);
         addRow('Elevation Profile', node.props.elevationProfileMode || 'End Elevations', 'elevationProfileMode', false, '', 'select', ['Ignore', 'End Elevations', 'High Point Check']);
         if (node.props.elevationProfileMode !== 'Ignore') {
             addRow('Start Elevation Override', node.props.startElevation ?? '', 'startElevation', false, 'm', 'number');
@@ -1680,13 +2075,14 @@ function renderSidebar(nodeId) {
         const showSegmentElevations = node.props.elevationProfileMode !== 'Ignore';
         const showHighPointColumns = node.props.elevationProfileMode === 'High Point Check';
         const dataBasisText = segmentResults.length
-            ? [...new Set(segmentResults.flatMap(result => [result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
+            ? [...new Set(segmentResults.flatMap(result => [result.sizeSource?.status, result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
             : '-';
         const pipeFlowRegime = segmentResults.length
             ? [...new Set(segmentResults.map(result => result.flowRegime).filter(Boolean))].join(' / ')
             : '-';
         const pipeWarnings = [...new Set([
             ...((node.results?.warnings || []).filter(Boolean)),
+            ...(typeof getPipeValveCompatibilityWarnings === 'function' ? getPipeValveCompatibilityWarnings(nodeId, globalModel, connections) : []),
             ...segmentResults.map(result => result.regimeWarning).filter(Boolean)
         ])];
 
@@ -1696,35 +2092,35 @@ function renderSidebar(nodeId) {
                 <div class="pipe-result-grid">
                     <div class="pipe-result-card">
                         <span>Flow Rate</span>
-                        <strong data-key="pipe-flow">${formatReadoutValue(node.results?.flow ?? 0)} m3/h</strong>
+                        <strong data-key="pipe-flow">${escapeHtml(formatTraceDisplayValue(node.results?.flow ?? 0, 'm3/h'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Pipe Pressure</span>
-                        <strong data-key="pipe-pressure">${formatReadoutValue(node.results?.pressure)} bar a</strong>
+                        <strong data-key="pipe-pressure">${escapeHtml(formatTraceDisplayValue(node.results?.pressure, 'bar a'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Inlet Pressure</span>
-                        <strong data-key="pipe-inlet-pressure">${formatReadoutValue(node.results?.inletPressure)} bar a</strong>
+                        <strong data-key="pipe-inlet-pressure">${escapeHtml(formatTraceDisplayValue(node.results?.inletPressure, 'bar a'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Outlet Pressure</span>
-                        <strong data-key="pipe-outlet-pressure">${formatReadoutValue(node.results?.outletPressure)} bar a</strong>
+                        <strong data-key="pipe-outlet-pressure">${escapeHtml(formatTraceDisplayValue(node.results?.outletPressure, 'bar a'))}</strong>
                     </div>
                     <div class="pipe-result-card pipe-result-card-wide">
                         <span>Total Head Loss</span>
-                        <strong data-key="pipe-head-loss">${formatReadoutValue(totalHeadLoss)} m</strong>
+                        <strong data-key="pipe-head-loss">${escapeHtml(formatTraceDisplayValue(totalHeadLoss, 'm'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Major Loss</span>
-                        <strong data-key="pipe-major-loss">${formatReadoutValue(totalMajorLoss)} m</strong>
+                        <strong data-key="pipe-major-loss">${escapeHtml(formatTraceDisplayValue(totalMajorLoss, 'm'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Minor Loss</span>
-                        <strong data-key="pipe-fitting-loss">${formatReadoutValue(totalFittingLoss)} m</strong>
+                        <strong data-key="pipe-fitting-loss">${escapeHtml(formatTraceDisplayValue(totalFittingLoss, 'm'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Allowance Loss</span>
-                        <strong data-key="pipe-allowance-loss">${formatReadoutValue(totalAllowanceLoss)} m</strong>
+                        <strong data-key="pipe-allowance-loss">${escapeHtml(formatTraceDisplayValue(totalAllowanceLoss, 'm'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>Total K</span>
@@ -1736,11 +2132,11 @@ function renderSidebar(nodeId) {
                     </div>
                     <div class="pipe-result-card">
                         <span>High Point P</span>
-                        <strong data-key="pipe-high-point-pressure">${formatReadoutValue(node.results?.highPointPressure)} bar a</strong>
+                        <strong data-key="pipe-high-point-pressure">${escapeHtml(formatTraceDisplayValue(node.results?.highPointPressure, 'bar a'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>High Point Margin</span>
-                        <strong data-key="pipe-high-point-margin">${formatReadoutValue(node.results?.highPointVaporMargin)} bar</strong>
+                        <strong data-key="pipe-high-point-margin">${escapeHtml(formatTraceDisplayValue(node.results?.highPointVaporMargin, 'bar'))}</strong>
                     </div>
                     <div class="pipe-result-card">
                         <span>High Point Segment</span>
@@ -1778,11 +2174,16 @@ function renderSidebar(nodeId) {
         const pipeSizeOptionsHtml = (PIPE_SIZE_OPTIONS || []).map(option => `<option value="${escapeHtml(option.label)}">${escapeHtml(option.label)}</option>`).join('');
         const materialOptionsHtml = (PIPE_MATERIAL_OPTIONS || []).map(option => `<option value="${escapeHtml(option.label)}">${escapeHtml(option.label)}</option>`).join('');
         const fittingOptionsHtml = (PIPE_FITTING_OPTIONS || []).map(option => `<option value="${escapeHtml(option.label)}">${escapeHtml(option.label)}</option>`).join('');
+        const pipeDiameterUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('diameter') : 'm';
+        const pipeLengthUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('length') : 'm';
+        const pipeRoughnessUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('roughness') : 'mm';
+        const pipeHeadUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('head') : 'm';
+        const pipeSpeedUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('speed') : 'm/s';
         const segmentElevationHeaders = showSegmentElevations
-            ? '<th>z in</th><th>z out</th><th>P in</th><th>P out</th>'
+            ? `<th>z in (${escapeHtml(pipeHeadUnit)})</th><th>z out (${escapeHtml(pipeHeadUnit)})</th><th>P in</th><th>P out</th>`
             : '';
         const highPointHeaders = showHighPointColumns
-            ? '<th>HP z</th><th>HP %</th><th>HP P</th><th>HP Margin</th>'
+            ? `<th>HP z (${escapeHtml(pipeHeadUnit)})</th><th>HP %</th><th>HP P</th><th>HP Margin</th>`
             : '';
         let segHtml = `
             <div style="padding: 10px;">
@@ -1796,10 +2197,10 @@ function renderSidebar(nodeId) {
                             <tr>
                                 <th>Name</th>
                                 <th>NPS / Schedule</th>
-                                <th>ID (m)</th>
-                                <th>Len (m)</th>
+                                <th>ID (${escapeHtml(pipeDiameterUnit)})</th>
+                                <th>Len (${escapeHtml(pipeLengthUnit)})</th>
                                 <th>Material</th>
-                                <th>eps (mm)</th>
+                                <th>eps (${escapeHtml(pipeRoughnessUnit)})</th>
                                 <th>eps eff</th>
                                 <th>Fitting</th>
                                 <th>Qty</th>
@@ -1808,14 +2209,14 @@ function renderSidebar(nodeId) {
                                 <th>Total K</th>
                                 ${segmentElevationHeaders}
                                 ${highPointHeaders}
-                                <th>V (m/s)</th>
+                                <th>V (${escapeHtml(pipeSpeedUnit)})</th>
                                 <th>Re</th>
                                 <th>Regime</th>
                                 <th>Darcy f</th>
-                                <th>Major hL</th>
-                                <th>Minor hL</th>
-                                <th>hL Allow</th>
-                                <th>Total hL</th>
+                                <th>Major hL (${escapeHtml(pipeHeadUnit)})</th>
+                                <th>Minor hL (${escapeHtml(pipeHeadUnit)})</th>
+                                <th>hL Allow (${escapeHtml(pipeHeadUnit)})</th>
+                                <th>Total hL (${escapeHtml(pipeHeadUnit)})</th>
                                 <th>Basis</th>
                                 <th></th>
                             </tr>
@@ -1823,24 +2224,36 @@ function renderSidebar(nodeId) {
                         <tbody>
         `;
         
+        const displayPipeValue = (value, quantity, digits = 2) => {
+            if (value === '' || value === null || value === undefined) return '';
+            const display = typeof convertToDisplay === 'function' ? convertToDisplay(value, quantity) : value;
+            return formatEngineeringValue(display, digits);
+        };
+        const internalPipeValue = (value, quantity) => {
+            const parsed = parseFloat(value);
+            if (!Number.isFinite(parsed)) return '';
+            return typeof convertFromDisplay === 'function' ? convertFromDisplay(parsed, quantity) : parsed;
+        };
+
         node.props.segments.forEach((seg, i) => {
             const result = segmentResultByIndex.get(i) || {};
             const profile = segmentProfileByIndex.get(i) || {};
             const diameterReadonly = seg.pipeSize !== 'Custom diameter' ? 'readonly' : '';
             const fittingKReadonly = seg.fittingType !== PIPE_FITTING_CUSTOM ? 'readonly' : '';
             const segmentElevationCells = showSegmentElevations ? `
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="startElevation" value="${seg.startElevation === '' ? '' : formatEngineeringValue(seg.startElevation, 2)}" step="0.1"></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="endElevation" value="${seg.endElevation === '' ? '' : formatEngineeringValue(seg.endElevation, 2)}" step="0.1"></td>
-                    <td class="segment-readout" data-segment-result="startPressure">${formatEngineeringValue(profile.startPressure, 2)}</td>
-                    <td class="segment-readout" data-segment-result="endPressure">${formatEngineeringValue(profile.endPressure, 2)}</td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="startElevation" value="${displayPipeValue(seg.startElevation, 'head', 2)}" step="0.1"></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="endElevation" value="${displayPipeValue(seg.endElevation, 'head', 2)}" step="0.1"></td>
+                    <td class="segment-readout" data-segment-result="startPressure">${escapeHtml(formatTraceDisplayValue(profile.startPressure, 'bar a'))}</td>
+                    <td class="segment-readout" data-segment-result="endPressure">${escapeHtml(formatTraceDisplayValue(profile.endPressure, 'bar a'))}</td>
             ` : '';
             const highPointCells = showHighPointColumns ? `
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="highPointElevation" value="${seg.highPointElevation === '' ? '' : formatEngineeringValue(seg.highPointElevation, 2)}" step="0.1"></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="highPointElevation" value="${displayPipeValue(seg.highPointElevation, 'head', 2)}" step="0.1"></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="highPointLocationPercent" value="${formatEngineeringValue(seg.highPointLocationPercent ?? 50, 1)}" step="1"></td>
-                    <td class="segment-readout" data-segment-result="highPointPressure">${formatEngineeringValue(profile.highPointPressure, 2)}</td>
-                    <td class="segment-readout" data-segment-result="highPointVaporMargin">${formatEngineeringValue(profile.highPointVaporMargin, 2)}</td>
+                    <td class="segment-readout" data-segment-result="highPointPressure">${escapeHtml(formatTraceDisplayValue(profile.highPointPressure, 'bar a'))}</td>
+                    <td class="segment-readout" data-segment-result="highPointVaporMargin">${escapeHtml(formatTraceDisplayValue(profile.highPointVaporMargin, 'bar'))}</td>
             ` : '';
             const basisText = [
+                result.sizeSource?.status || '',
                 result.materialSource?.status || '',
                 result.fittingSource?.status || ''
             ].filter(Boolean).join('/');
@@ -1848,11 +2261,11 @@ function renderSidebar(nodeId) {
                 <tr>
                     <td><input type="text" class="segment-input" data-idx="${i}" data-field="name" value="${escapeHtml(seg.name)}"></td>
                     <td><select class="segment-input" data-idx="${i}" data-field="pipeSize" data-value="${escapeHtml(seg.pipeSize)}">${pipeSizeOptionsHtml}</select></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="diameter" value="${formatEngineeringValue(seg.diameter, 5)}" step="0.001" ${diameterReadonly}></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="length" value="${formatEngineeringValue(seg.length, 2)}" step="0.1"></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="diameter" value="${displayPipeValue(seg.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3)}" step="0.001" ${diameterReadonly}></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="length" value="${displayPipeValue(seg.length, 'length', 2)}" step="0.1"></td>
                     <td><select class="segment-input" data-idx="${i}" data-field="material" data-value="${escapeHtml(seg.material)}">${materialOptionsHtml}</select></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="roughnessMm" value="${formatEngineeringValue((seg.roughness || 0) * 1000, 4)}" step="0.001"></td>
-                    <td class="segment-readout" data-segment-result="effectiveRoughnessMm">${formatEngineeringValue((result.effectiveRoughness || 0) * 1000, 4)}</td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="roughnessMm" value="${displayPipeValue(seg.roughness || 0, 'roughness', 4)}" step="0.001"></td>
+                    <td class="segment-readout" data-segment-result="effectiveRoughnessMm">${displayPipeValue(result.effectiveRoughness || 0, 'roughness', 4)}</td>
                     <td><select class="segment-input" data-idx="${i}" data-field="fittingType" data-value="${escapeHtml(seg.fittingType)}">${fittingOptionsHtml}</select></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="fittingQuantity" value="${formatEngineeringValue(seg.fittingQuantity || 0, 0)}" step="1"></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="fittingK" value="${formatEngineeringValue(seg.fittingK || 0, 3)}" step="0.01" ${fittingKReadonly}></td>
@@ -1860,14 +2273,14 @@ function renderSidebar(nodeId) {
                     <td class="segment-readout" data-segment-result="minorLossK">${formatEngineeringValue(result.minorLossK, 2)}</td>
                     ${segmentElevationCells}
                     ${highPointCells}
-                    <td class="segment-readout" data-segment-result="velocity">${formatEngineeringValue(result.velocity, 2)}</td>
+                    <td class="segment-readout" data-segment-result="velocity">${displayPipeValue(result.velocity, 'speed', 2)}</td>
                     <td class="segment-readout" data-segment-result="reynolds">${Number.isFinite(result.reynolds) ? Math.round(result.reynolds).toLocaleString() : '-'}</td>
                     <td class="segment-readout" data-segment-result="flowRegime">${escapeHtml(result.flowRegime || '-')}</td>
                     <td class="segment-readout" data-segment-result="frictionFactor">${formatEngineeringValue(result.frictionFactor, 4)}</td>
-                    <td class="segment-readout" data-segment-result="majorLoss">${formatEngineeringValue(result.majorLoss, 2)}</td>
-                    <td class="segment-readout" data-segment-result="fittingLoss">${formatEngineeringValue(result.minorLoss, 2)}</td>
-                    <td class="segment-readout" data-segment-result="allowanceLoss">${formatEngineeringValue(result.allowanceLoss, 2)}</td>
-                    <td class="segment-readout" data-segment-result="totalLoss">${formatEngineeringValue(result.totalLoss, 2)}</td>
+                    <td class="segment-readout" data-segment-result="majorLoss">${displayPipeValue(result.majorLoss, 'head', 2)}</td>
+                    <td class="segment-readout" data-segment-result="fittingLoss">${displayPipeValue(result.minorLoss, 'head', 2)}</td>
+                    <td class="segment-readout" data-segment-result="allowanceLoss">${displayPipeValue(result.allowanceLoss, 'head', 2)}</td>
+                    <td class="segment-readout" data-segment-result="totalLoss">${displayPipeValue(result.totalLoss, 'head', 2)}</td>
                     <td class="segment-readout" data-segment-result="basis">${escapeHtml(basisText || '-')}</td>
                     <td><button class="btn-remove-segment" data-idx="${i}" data-node="${nodeId}">X</button></td>
                 </tr>
@@ -1919,13 +2332,14 @@ function renderSidebar(nodeId) {
             const updatedAllowanceLoss = [...updatedDetails.values()].reduce((sum, result) => sum + result.allowanceLoss, 0);
             const updatedTotalK = [...updatedDetails.values()].reduce((sum, result) => sum + result.minorLossK, 0);
             const updatedDataBasis = updatedDetails.size
-                ? [...new Set([...updatedDetails.values()].flatMap(result => [result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
+                ? [...new Set([...updatedDetails.values()].flatMap(result => [result.sizeSource?.status, result.materialSource?.status, result.fittingSource?.status]).filter(Boolean))].join(' / ')
                 : '-';
             const updatedFlowRegime = updatedDetails.size
                 ? [...new Set([...updatedDetails.values()].map(result => result.flowRegime).filter(Boolean))].join(' / ')
                 : '-';
             const updatedWarnings = [...new Set([
                 ...((node.results?.warnings || []).filter(Boolean)),
+                ...(typeof getPipeValveCompatibilityWarnings === 'function' ? getPipeValveCompatibilityWarnings(nodeId, globalModel, connections) : []),
                 ...[...updatedDetails.values()].map(result => result.regimeWarning).filter(Boolean)
             ])];
 
@@ -1967,21 +2381,22 @@ function renderSidebar(nodeId) {
                 const highPointPressureCell = row.querySelector('[data-segment-result="highPointPressure"]');
                 const highPointMarginCell = row.querySelector('[data-segment-result="highPointVaporMargin"]');
                 const basisCell = row.querySelector('[data-segment-result="basis"]');
-                if (velocityCell) velocityCell.textContent = formatEngineeringValue(result.velocity, 2);
+                if (velocityCell) velocityCell.textContent = displayPipeValue(result.velocity, 'speed', 2);
                 if (reynoldsCell) reynoldsCell.textContent = Number.isFinite(result.reynolds) ? Math.round(result.reynolds).toLocaleString() : '-';
                 if (flowRegimeCell) flowRegimeCell.textContent = result.flowRegime || '-';
                 if (frictionCell) frictionCell.textContent = formatEngineeringValue(result.frictionFactor, 4);
                 if (totalKCell) totalKCell.textContent = formatEngineeringValue(result.minorLossK, 2);
-                if (majorLossCell) majorLossCell.textContent = formatEngineeringValue(result.majorLoss, 2);
-                if (fittingLossCell) fittingLossCell.textContent = formatEngineeringValue(result.minorLoss, 2);
-                if (allowanceLossCell) allowanceLossCell.textContent = formatEngineeringValue(result.allowanceLoss, 2);
-                if (totalLossCell) totalLossCell.textContent = formatEngineeringValue(result.totalLoss, 2);
-                if (effectiveRoughnessCell) effectiveRoughnessCell.textContent = formatEngineeringValue((result.effectiveRoughness || 0) * 1000, 4);
-                if (startPressureCell) startPressureCell.textContent = formatEngineeringValue(profile.startPressure, 2);
-                if (endPressureCell) endPressureCell.textContent = formatEngineeringValue(profile.endPressure, 2);
-                if (highPointPressureCell) highPointPressureCell.textContent = formatEngineeringValue(profile.highPointPressure, 2);
-                if (highPointMarginCell) highPointMarginCell.textContent = formatEngineeringValue(profile.highPointVaporMargin, 2);
+                if (majorLossCell) majorLossCell.textContent = displayPipeValue(result.majorLoss, 'head', 2);
+                if (fittingLossCell) fittingLossCell.textContent = displayPipeValue(result.minorLoss, 'head', 2);
+                if (allowanceLossCell) allowanceLossCell.textContent = displayPipeValue(result.allowanceLoss, 'head', 2);
+                if (totalLossCell) totalLossCell.textContent = displayPipeValue(result.totalLoss, 'head', 2);
+                if (effectiveRoughnessCell) effectiveRoughnessCell.textContent = displayPipeValue(result.effectiveRoughness || 0, 'roughness', 4);
+                if (startPressureCell) startPressureCell.textContent = formatTraceDisplayValue(profile.startPressure, 'bar a');
+                if (endPressureCell) endPressureCell.textContent = formatTraceDisplayValue(profile.endPressure, 'bar a');
+                if (highPointPressureCell) highPointPressureCell.textContent = formatTraceDisplayValue(profile.highPointPressure, 'bar a');
+                if (highPointMarginCell) highPointMarginCell.textContent = formatTraceDisplayValue(profile.highPointVaporMargin, 'bar');
                 if (basisCell) basisCell.textContent = [
+                    result.sizeSource?.status || '',
                     result.materialSource?.status || '',
                     result.fittingSource?.status || ''
                 ].filter(Boolean).join('/') || '-';
@@ -2004,7 +2419,7 @@ function renderSidebar(nodeId) {
                     if (sizeOption && sizeOption.diameter) {
                         segment.diameter = sizeOption.diameter;
                         const diameterInput = e.target.closest('tr')?.querySelector('[data-field="diameter"]');
-                        if (diameterInput) diameterInput.value = formatEngineeringValue(segment.diameter, 5);
+                        if (diameterInput) diameterInput.value = displayPipeValue(segment.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3);
                     }
                     refreshPipeSegmentReadouts();
                     return;
@@ -2016,14 +2431,14 @@ function renderSidebar(nodeId) {
                     if (materialOption && materialOption.roughness !== null) {
                         segment.roughness = materialOption.roughness;
                         const roughnessInput = e.target.closest('tr')?.querySelector('[data-field="roughnessMm"]');
-                        if (roughnessInput) roughnessInput.value = formatEngineeringValue(segment.roughness * 1000, 4);
+                        if (roughnessInput) roughnessInput.value = displayPipeValue(segment.roughness, 'roughness', 4);
                     }
                     refreshPipeSegmentReadouts();
                     return;
                 }
 
                 if (field === 'roughnessMm') {
-                    segment.roughness = Math.max(0, (parseFloat(e.target.value) || 0) / 1000);
+                    segment.roughness = Math.max(0, internalPipeValue(e.target.value, 'roughness') || 0);
                     if (segment.material !== 'Custom roughness') segment.material = 'Custom roughness';
                 } else if (field === 'fittingK') {
                     segment.routeFittingAuto = false;
@@ -2035,10 +2450,14 @@ function renderSidebar(nodeId) {
                     segment.routeFittingAuto = false;
                     segment[field] = Math.max(0, parseFloat(e.target.value) || 0);
                 } else if (['startElevation', 'endElevation', 'highPointElevation'].includes(field)) {
-                    const parsed = parseFloat(e.target.value);
+                    const parsed = internalPipeValue(e.target.value, 'head');
                     segment[field] = Number.isFinite(parsed) ? parsed : '';
                 } else if (field === 'highPointLocationPercent') {
                     segment[field] = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+                } else if (field === 'diameter') {
+                    segment[field] = Math.max(0, internalPipeValue(e.target.value, 'diameter') || 0);
+                } else if (field === 'length') {
+                    segment[field] = Math.max(0, internalPipeValue(e.target.value, 'length') || 0);
                 } else if (e.target.type === 'number') {
                     segment[field] = Math.max(0, parseFloat(e.target.value) || 0);
                 } else {
@@ -2079,7 +2498,7 @@ function renderSidebar(nodeId) {
                     if (sizeOption && sizeOption.diameter) {
                         segment.diameter = sizeOption.diameter;
                         const diameterInput = e.target.closest('tr')?.querySelector('[data-field="diameter"]');
-                        if (diameterInput) diameterInput.value = formatEngineeringValue(segment.diameter, 5);
+                        if (diameterInput) diameterInput.value = displayPipeValue(segment.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3);
                     }
                 }
                 if (segment && field === 'material') {
@@ -2088,7 +2507,7 @@ function renderSidebar(nodeId) {
                     if (materialOption && materialOption.roughness !== null) {
                         segment.roughness = materialOption.roughness;
                         const roughnessInput = e.target.closest('tr')?.querySelector('[data-field="roughnessMm"]');
-                        if (roughnessInput) roughnessInput.value = formatEngineeringValue(segment.roughness * 1000, 4);
+                        if (roughnessInput) roughnessInput.value = displayPipeValue(segment.roughness, 'roughness', 4);
                     }
                 }
                 refreshPipeSegmentReadouts();
@@ -2134,6 +2553,9 @@ function renderSidebar(nodeId) {
             renderObjectProperties(node.type, nodeId, node, addRow, tbody);
         } else {
             addRow('Notes', 'No custom properties defined for this object type.', '', true);
+        }
+        if (node.type === 'pump' && taskTargets) {
+            renderPumpPropertiesSidebar(nodeId, taskTargets, { append: true });
         }
     }
 }
