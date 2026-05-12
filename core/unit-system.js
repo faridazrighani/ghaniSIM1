@@ -494,6 +494,7 @@ function updateBasisStatusPill() {
 
     pill.classList.toggle('basis-status-unconfirmed', !settings.basisConfirmed);
     pill.classList.toggle('basis-status-dirty', !!settings.basisDirty);
+    pill.classList.toggle('basis-status-confirmed-clean', !!settings.basisConfirmed && !settings.basisDirty);
     pill.title = settings.basisDirty
         ? 'Fluid Basis or Unit Standard changed. Reconfirm before continuing.'
         : 'Open Fluid Basis and Unit Standard setup';

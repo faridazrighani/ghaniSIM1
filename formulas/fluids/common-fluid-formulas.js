@@ -41,7 +41,7 @@ function getFluidTraceGravity() {
 
 function getFluidTraceMethod(fluidName, props) {
     if (props?.propertyMethod) return props.propertyMethod;
-    if (fluidName === 'Water') return 'IAPWS-style water correlation';
+    if (fluidName === 'Water') return 'IAPWS-based water property correlation';
     if (fluidName === 'Methanol') return 'NIST liquid table / Antoine vapor pressure';
     if (fluidName === 'Palm Oil') return 'Palm oil liquid table interpolation';
     if (fluidName === 'Crude Oil') return 'API/ASTM empirical estimate';
@@ -52,8 +52,8 @@ function getFluidTraceSourceProfile(fluidName, inputMode) {
     if (fluidName === 'Water') {
         return {
             primary: 'Correlation',
-            density: 'IAPWS-style liquid density correlation',
-            dynamicViscosity: 'IAPWS-style viscosity correlation',
+            density: 'IAPWS-based liquid density correlation',
+            dynamicViscosity: 'IAPWS-based liquid viscosity correlation',
             kinematicViscosity: 'Derived from dynamic viscosity and density',
             vaporPressure: 'IAPWS vapor pressure correlation',
             thermal: 'Correlation',
@@ -73,23 +73,23 @@ function getFluidTraceSourceProfile(fluidName, inputMode) {
     }
     if (fluidName === 'Palm Oil') {
         return {
-            primary: 'Table interpolation / estimate',
+            primary: 'Literature table interpolation / engineering estimate',
             density: 'Palm oil liquid table interpolation',
             dynamicViscosity: 'Palm oil liquid table interpolation',
             kinematicViscosity: 'Derived from dynamic viscosity and density',
-            vaporPressure: 'Reference default estimate',
+            vaporPressure: 'Engineering default estimate pending validation',
             thermal: 'Palm oil liquid table interpolation',
-            note: 'Palm oil properties are composition dependent; validate final thesis cases against lab or literature data.'
+            note: 'Palm oil properties are composition dependent; validate final academic engineering cases against laboratory or literature data.'
         };
     }
     if (fluidName === 'Crude Oil') {
         return {
-            primary: 'Empirical estimate',
+            primary: 'API/ASTM-based empirical estimate',
             density: 'API MPMS 11.1-style density estimate',
             dynamicViscosity: 'ASTM D341 viscosity-temperature estimate',
             kinematicViscosity: 'ASTM D341 viscosity-temperature estimate',
             vaporPressure: 'RVP-based empirical vapor pressure estimate',
-            thermal: 'Crude oil empirical estimate',
+            thermal: 'Crude oil empirical engineering estimate',
             note: 'Crude oil properties depend on assay/composition; use measured data when available.'
         };
     }
@@ -558,7 +558,7 @@ function buildFluidCalculationTrace(fluidNode) {
         academicNotes: [
             sourceProfile.note,
             `${fluidName} source status: ${auditProfile.primaryStatus}. ${auditProfile.primaryReference}`,
-            'Engineering note: final thesis cases should be validated against lab, vendor, NIST, or literature data whenever the status is not Verified or Formula verified.'
+            'Engineering note: final academic or design-study cases should be validated against laboratory, vendor, NIST, or peer-reviewed literature data whenever the audit status is not Verified or Formula verified.'
         ],
         auditProfile,
         warnings

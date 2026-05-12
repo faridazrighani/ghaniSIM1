@@ -24,6 +24,13 @@ const SOURCE_TYPE_OPTIONS = [
     SOURCE_TYPE_FIXED_FLOW,
     SOURCE_TYPE_STANDALONE
 ];
+const SOURCE_TYPE_DESCRIPTIONS = {
+    [SOURCE_TYPE_OPEN_TANK]: 'Atmospheric tank/reservoir boundary; may inherit tank pressure and level through a dashed attachment.',
+    [SOURCE_TYPE_PRESSURIZED_VESSEL]: 'Closed vessel boundary; may inherit vessel pressure and liquid elevation through a dashed attachment.',
+    [SOURCE_TYPE_EXTERNAL_HEADER]: 'External piping/header tie-in with manual pressure, elevation, and static/total pressure basis.',
+    [SOURCE_TYPE_FIXED_FLOW]: 'Specified inlet flow boundary; use a solid pipe and review the resulting pressure/head balance.',
+    [SOURCE_TYPE_STANDALONE]: 'Generic manual pressure, elevation, temperature, and flow boundary connected by a solid pipe.'
+};
 const SOURCE_BOUNDARY_DATA_MANUAL = 'Manual';
 const SOURCE_BOUNDARY_DATA_INHERIT = 'Inherit from Attached Equipment';
 const SOURCE_PRESSURE_ENERGY_STATIC = 'Static Pressure';
@@ -303,6 +310,14 @@ function isSourceTypeSemanticAttachmentCapable(sourceOrType) {
 
 function isSourceTypeHydraulicBoundary(sourceOrType) {
     return !isSourceTypeSemanticAttachmentCapable(sourceOrType);
+}
+
+function getSourceTypeDescription(sourceOrType) {
+    const sourceType = typeof sourceOrType === 'string'
+        ? sourceOrType
+        : sourceOrType?.props?.sourceType;
+    return SOURCE_TYPE_DESCRIPTIONS[sourceType]
+        || 'Source boundary type used to define the upstream hydraulic condition.';
 }
 
 function isStorageBoundaryAttachmentTarget(node) {
@@ -686,6 +701,7 @@ function disconnectPipe(pipeId, options = {}) {
     if (currentSelectedNode === pipeId) {
         clearSelection();
     }
+    if (typeof renderObjectTaskMinimizedDock === 'function') renderObjectTaskMinimizedDock();
 
     drawConnections();
     updateSimulation({ renderSidebarAfter: currentSelectedNode !== null });
@@ -728,6 +744,7 @@ function deleteNode(nodeId) {
     if (currentSelectedNode === nodeId) {
         clearSelection();
     }
+    if (typeof renderObjectTaskMinimizedDock === 'function') renderObjectTaskMinimizedDock();
     
     drawConnections();
     updateSimulation();

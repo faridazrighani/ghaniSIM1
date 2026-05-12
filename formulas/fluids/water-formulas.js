@@ -11,7 +11,7 @@ function updateWaterProperties() {
     node.props.bulkModulus = props.bulkModulus;
     node.props.thermalConductivity = props.thermalConductivity;
     node.props.dielectricConstant = props.dielectricConstant;
-    node.props.propertyMethod = 'IAPWS SR6-08(2011)';
+    node.props.propertyMethod = 'IAPWS-based water property correlation (IAPWS SR6-08, 2011)';
 
     recalcExtendedFluidProps(node);
 }
