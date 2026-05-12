@@ -417,6 +417,10 @@ assert(canvasManager.includes('requestPipePropertiesTaskWindowOpen(nodeId)'), 'E
 assert(taskProperties.includes('isPipePropertiesTaskDismissed'), 'Expected task window flow to respect dismissed pipe task window');
 assert(indexHtml.includes('taskWindowMinimize'), 'Expected task window minimize control');
 assert(styles.includes('task-window-pipe-active'), 'Expected responsive pipe task window styling');
+assert(styles.includes('.task-window.task-window-pipe-active.task-window-minimized'), 'Expected active task windows to keep compact minimized sizing');
+assert(styles.includes('width: min(330px, calc(100vw - 24px)) !important'), 'Expected compact desktop minimized task window width');
+assert(styles.includes('width: min(300px, calc(100vw - 16px)) !important'), 'Expected compact mobile minimized task window width');
+assert(styles.includes('.task-window.task-window-minimized .task-window-actions'), 'Expected minimized task window actions to be compact');
 assert(styles.includes('overflow-x: hidden'), 'Expected task window body to prevent whole-window horizontal scrolling');
 assert(!indexHtml.includes('properties-sidebar'), 'Expected legacy object sidebar DOM to be removed');
 assert(!indexHtml.includes('pump-properties-sidebar'), 'Expected legacy pump sidebar DOM to be removed');

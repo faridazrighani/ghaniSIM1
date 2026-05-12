@@ -3,7 +3,10 @@ function isInstrumentType(type) {
 }
 
 const TOOLBAR_DRAG_THRESHOLD_PX = 6;
+const RIBBON_CLICK_OBJECT_GAP_PX = 44;
+const RIBBON_CLICK_MIN_STEP_PX = 104;
 let toolbarDragState = null;
+let ribbonClickPlacementState = null;
 
 const VISUAL_OBJECT_BASE_SIZES = {
     tank: { width: 82, height: 62 },
@@ -63,6 +66,7 @@ const WARNING_PANEL_STATUS_PRIORITY = {
 
 const CANVAS_WARNING_PANEL_MARGIN = 12;
 let canvasWarningPanelDragState = null;
+let canvasWarningPanelViewportFrame = null;
 
 function getPumpOperatingWarnings(node) {
     return Array.isArray(node?.results?.warnings)
@@ -229,53 +233,105 @@ function focusWarningNode(nodeId) {
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
 }
 
+function getCanvasWarningPanelViewportBounds(canvas, panel) {
+    const margin = CANVAS_WARNING_PANEL_MARGIN;
+    const rect = canvas.getBoundingClientRect?.() || { width: canvas.clientWidth || 0, height: canvas.clientHeight || 0 };
+    const viewportWidth = canvas.clientWidth || rect.width || panel.offsetWidth + (margin * 2);
+    const viewportHeight = canvas.clientHeight || rect.height || panel.offsetHeight + (margin * 2);
+    const panelWidth = panel.offsetWidth || panel.getBoundingClientRect?.().width || 0;
+    const panelHeight = panel.offsetHeight || panel.getBoundingClientRect?.().height || 0;
+    const minLeft = (canvas.scrollLeft || 0) + margin;
+    const minTop = (canvas.scrollTop || 0) + margin;
+
+    return {
+        minLeft,
+        minTop,
+        maxLeft: Math.max(minLeft, (canvas.scrollLeft || 0) + viewportWidth - panelWidth - margin),
+        maxTop: Math.max(minTop, (canvas.scrollTop || 0) + viewportHeight - panelHeight - margin)
+    };
+}
+
 function clampCanvasWarningPanelPosition(left, top) {
     const canvas = document.getElementById('canvas');
     const panel = document.getElementById('canvasWarningPanel');
     if (!canvas || !panel) return { left, top };
 
-    const margin = CANVAS_WARNING_PANEL_MARGIN;
-    const maxLeft = Math.max(margin, canvas.clientWidth - panel.offsetWidth - margin);
-    const maxTop = Math.max(margin, canvas.clientHeight - panel.offsetHeight - margin);
+    const bounds = getCanvasWarningPanelViewportBounds(canvas, panel);
 
     return {
-        left: Math.max(margin, Math.min(maxLeft, left)),
-        top: Math.max(margin, Math.min(maxTop, top))
+        left: Math.max(bounds.minLeft, Math.min(bounds.maxLeft, left)),
+        top: Math.max(bounds.minTop, Math.min(bounds.maxTop, top))
     };
 }
 
-function setCanvasWarningPanelPosition(left, top) {
+function setCanvasWarningPanelPosition(left, top, options = {}) {
     const panel = document.getElementById('canvasWarningPanel');
+    const canvas = document.getElementById('canvas');
     if (!panel) return;
     const position = clampCanvasWarningPanelPosition(left, top);
     panel.style.left = `${position.left}px`;
     panel.style.top = `${position.top}px`;
     panel.style.right = 'auto';
     panel.style.transform = 'none';
+    if (canvas && options.rememberViewport !== false) {
+        panel.dataset.viewportLeft = `${position.left - (canvas.scrollLeft || 0)}`;
+        panel.dataset.viewportTop = `${position.top - (canvas.scrollTop || 0)}`;
+    }
+}
+
+function keepCanvasWarningPanelInViewport() {
+    const canvas = document.getElementById('canvas');
+    const panel = document.getElementById('canvasWarningPanel');
+    if (!canvas || !panel) return;
+
+    if (panel.dataset.userMoved !== 'true') {
+        positionCanvasWarningPanelDefault();
+        return;
+    }
+
+    const viewportLeft = parseFloat(panel.dataset.viewportLeft);
+    const viewportTop = parseFloat(panel.dataset.viewportTop);
+    const left = (canvas.scrollLeft || 0) + (Number.isFinite(viewportLeft) ? viewportLeft : panel.offsetLeft - (canvas.scrollLeft || 0));
+    const top = (canvas.scrollTop || 0) + (Number.isFinite(viewportTop) ? viewportTop : panel.offsetTop - (canvas.scrollTop || 0));
+    setCanvasWarningPanelPosition(left, top);
+}
+
+function requestCanvasWarningPanelViewportClamp() {
+    if (canvasWarningPanelViewportFrame !== null) return;
+    canvasWarningPanelViewportFrame = requestAnimationFrame(() => {
+        canvasWarningPanelViewportFrame = null;
+        keepCanvasWarningPanelInViewport();
+    });
 }
 
 function positionCanvasWarningPanelDefault() {
     const canvas = document.getElementById('canvas');
     const legend = document.querySelector('.canvas-status-legend');
     const panel = document.getElementById('canvasWarningPanel');
-    if (!canvas || !panel || panel.dataset.userMoved === 'true') return;
+    if (!canvas || !panel) return;
+
+    if (panel.dataset.userMoved === 'true') {
+        keepCanvasWarningPanelInViewport();
+        return;
+    }
 
     const margin = CANVAS_WARNING_PANEL_MARGIN;
     const legendHidden = !legend || window.getComputedStyle(legend).display === 'none';
     if (legendHidden) {
-        setCanvasWarningPanelPosition(margin, margin);
+        setCanvasWarningPanelPosition((canvas.scrollLeft || 0) + margin, (canvas.scrollTop || 0) + margin);
         return;
     }
 
-    const defaultTop = legend.offsetTop + legend.offsetHeight + 10;
-    const defaultLeft = legend.offsetLeft + legend.offsetWidth - panel.offsetWidth;
+    const defaultTop = (canvas.scrollTop || 0) + margin + legend.offsetHeight + 10;
+    const defaultLeft = (canvas.scrollLeft || 0) + canvas.clientWidth - panel.offsetWidth - margin;
     setCanvasWarningPanelPosition(defaultLeft, defaultTop);
 }
 
 function initCanvasWarningPanelWindow() {
     const panel = document.getElementById('canvasWarningPanel');
     const header = document.getElementById('canvasWarningHeader');
-    if (!panel || !header || panel.dataset.windowInitialized === 'true') return;
+    const canvas = document.getElementById('canvas');
+    if (!panel || !header || !canvas || panel.dataset.windowInitialized === 'true') return;
 
     header.addEventListener('pointerdown', event => {
         if (event.button !== undefined && event.button !== 0) return;
@@ -315,6 +371,9 @@ function initCanvasWarningPanelWindow() {
 
     header.addEventListener('pointerup', stopDrag);
     header.addEventListener('pointercancel', stopDrag);
+    canvas.addEventListener('scroll', requestCanvasWarningPanelViewportClamp, { passive: true });
+    window.addEventListener('resize', requestCanvasWarningPanelViewportClamp);
+    window.addEventListener('orientationchange', requestCanvasWarningPanelViewportClamp);
 
     panel.dataset.windowInitialized = 'true';
     requestAnimationFrame(positionCanvasWarningPanelDefault);
@@ -654,7 +713,7 @@ function renderToolbarPalette() {
                 if (item.action === 'connect') {
                     activateConnectTool(item.routeStyle || 'Straight');
                 } else {
-                    addEquipment(item.type);
+                    addEquipment(item.type, null, { placementMode: 'ribbon-click' });
                 }
             });
 
@@ -678,26 +737,44 @@ function selectNode(nodeId, element) {
         return;
     }
 
-    if (globalModel[nodeId]?.type === 'pipe' && typeof requestPipePropertiesTaskWindowOpen === 'function') {
-        requestPipePropertiesTaskWindowOpen(nodeId);
-    }
-    if (globalModel[nodeId]?.type === 'tank' && typeof requestTankPropertiesTaskWindowOpen === 'function') {
-        requestTankPropertiesTaskWindowOpen(nodeId);
-    }
-    if (
-        globalModel[nodeId]
-        && !['pipe', 'tank', 'fluid'].includes(globalModel[nodeId].type)
-        && typeof requestObjectPropertiesTaskWindowOpen === 'function'
-    ) {
-        requestObjectPropertiesTaskWindowOpen(nodeId);
-    }
-
     // Clear previous selection
     document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
     // Set new selection
     if (element) element.classList.add('selected');
     currentSelectedNode = nodeId;
     renderSidebar(nodeId);
+}
+
+function requestUserTaskObjectProperties(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node || node.type === 'fluid') return;
+
+    if (node.type === 'pipe' && typeof requestPipePropertiesTaskWindowOpen === 'function') {
+        requestPipePropertiesTaskWindowOpen(nodeId);
+    } else if (node.type === 'tank' && typeof requestTankPropertiesTaskWindowOpen === 'function') {
+        requestTankPropertiesTaskWindowOpen(nodeId);
+    } else if (typeof requestObjectPropertiesTaskWindowOpen === 'function') {
+        requestObjectPropertiesTaskWindowOpen(nodeId);
+    }
+
+    const element = typeof getObjectElement === 'function' ? getObjectElement(nodeId) : null;
+    selectNode(nodeId, element);
+}
+
+function createUserTaskObjectPropertiesMenuItem(nodeId) {
+    const node = globalModel?.[nodeId];
+    if (!node || node.type === 'fluid') return null;
+
+    return {
+        label: 'User Task Object Properties',
+        action: () => requestUserTaskObjectProperties(nodeId)
+    };
+}
+
+function addUserTaskObjectPropertiesMenuItem(items, nodeId) {
+    const userTaskItem = createUserTaskObjectPropertiesMenuItem(nodeId);
+    if (userTaskItem) items.unshift(userTaskItem);
+    return items;
 }
 
 function getObjectElement(id) {
@@ -745,6 +822,82 @@ function getToolbarPlacementOffset(type) {
     return { x: 28, y: 26 };
 }
 
+function getToolbarObjectLayoutSize(type) {
+    if (isVisualResizableType(type)) {
+        const baseSize = VISUAL_OBJECT_BASE_SIZES[type];
+        return { width: baseSize.width, height: baseSize.height };
+    }
+
+    if (isInstrumentType(type)) return { width: 38, height: 38 };
+    return { width: 56, height: 52 };
+}
+
+function getRibbonClickPlacementStep(type) {
+    return Math.max(RIBBON_CLICK_MIN_STEP_PX, getToolbarObjectLayoutSize(type).width + RIBBON_CLICK_OBJECT_GAP_PX);
+}
+
+function getCanvasObjectElements() {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return [];
+    return Array.from(canvas.querySelectorAll('.pfd-object'));
+}
+
+function getRightmostCanvasObjectPlacement() {
+    const objects = getCanvasObjectElements();
+    let rightmost = null;
+
+    objects.forEach(element => {
+        const left = parseFloat(element.style.left) || 0;
+        const top = parseFloat(element.style.top) || 0;
+        const width = element.offsetWidth || getToolbarObjectLayoutSize(element.dataset.type).width;
+        const height = element.offsetHeight || getToolbarObjectLayoutSize(element.dataset.type).height;
+        const right = left + width;
+
+        if (!rightmost || right > rightmost.right) {
+            rightmost = {
+                right,
+                centerY: top + height / 2
+            };
+        }
+    });
+
+    return rightmost;
+}
+
+function getRibbonClickCanvasPlacement(type) {
+    const canvas = document.getElementById('canvas');
+    const rect = canvas.getBoundingClientRect();
+    const offset = getToolbarPlacementOffset(type);
+    const size = getToolbarObjectLayoutSize(type);
+    const existingObjects = getCanvasObjectElements();
+    let centerX;
+    let centerY;
+
+    if (existingObjects.length === 0) {
+        centerX = canvas.scrollLeft + rect.width / 2;
+        centerY = canvas.scrollTop + rect.height / 2;
+    } else if (ribbonClickPlacementState) {
+        centerX = ribbonClickPlacementState.nextCenterX;
+        centerY = ribbonClickPlacementState.centerY;
+    } else {
+        const rightmost = getRightmostCanvasObjectPlacement();
+        centerX = (rightmost?.right || canvas.scrollLeft + rect.width / 2) + RIBBON_CLICK_OBJECT_GAP_PX + size.width / 2;
+        centerY = rightmost?.centerY || canvas.scrollTop + rect.height / 2;
+    }
+
+    const placement = normalizeCanvasPlacement({
+        left: centerX - offset.x,
+        top: centerY - offset.y
+    });
+
+    ribbonClickPlacementState = {
+        centerY,
+        nextCenterX: centerX + getRibbonClickPlacementStep(type)
+    };
+
+    return placement;
+}
+
 function getDefaultCanvasPlacement(type) {
     const canvas = document.getElementById('canvas');
     const rect = canvas.getBoundingClientRect();
@@ -771,6 +924,13 @@ function normalizeCanvasPlacement(placement) {
         left: Math.max(0, parseFloat(placement.left) || 0),
         top: Math.max(0, parseFloat(placement.top) || 0)
     };
+}
+
+function minimizeObjectTaskWindowAfterEquipmentAdd(nodeId) {
+    const taskWindow = document.getElementById('taskWindow');
+    if (!taskWindow || taskWindow.hidden || taskWindow.dataset.nodeId !== nodeId) return;
+    if (!['pipe', 'tank', 'object'].includes(taskWindow.dataset.kind)) return;
+    if (typeof minimizeTaskWindow === 'function') minimizeTaskWindow();
 }
 
 function setToolbarDropActive(active) {
@@ -1170,9 +1330,13 @@ function makeDraggable(obj) {
 
             const items = sourceTypeOptions.map(sourceType => ({
                 label: sourceType,
+                description: typeof getSourceTypeDescription === 'function'
+                    ? getSourceTypeDescription(sourceType)
+                    : '',
                 active: sourceType === currentSourceType,
                 action: () => startSourceTypeActionFromContextMenu(nodeId, sourceType, e)
             }));
+            addUserTaskObjectPropertiesMenuItem(items, nodeId);
 
             if (sourceLink) {
                 items.push({
@@ -1202,6 +1366,7 @@ function makeDraggable(obj) {
                     }
                 }
             ];
+            addUserTaskObjectPropertiesMenuItem(items, nodeId);
 
             if (node.props && node.props.attachedTo) {
                 items.push({
@@ -1222,7 +1387,7 @@ function makeDraggable(obj) {
         }
 
         if (pendingConnectionStart && pendingConnectionStart.kind === 'source' && isSourceAttachTarget(nodeId)) {
-            showContextMenu(e.clientX, e.clientY, [
+            showContextMenu(e.clientX, e.clientY, addUserTaskObjectPropertiesMenuItem([
                 {
                     label: 'Attach source here',
                     action: () => attachSourceToEquipment(pendingConnectionStart.id, nodeId)
@@ -1232,7 +1397,7 @@ function makeDraggable(obj) {
                     danger: true,
                     action: () => deleteNode(nodeId)
                 }
-            ]);
+            ], nodeId));
             return;
         }
 
@@ -1252,6 +1417,7 @@ function makeDraggable(obj) {
                 }
             },
         ];
+        addUserTaskObjectPropertiesMenuItem(items, nodeId);
 
         const attachedSource = sourceLinks.find(link => link.targetId === nodeId);
         if (attachedSource) {
@@ -1329,7 +1495,7 @@ function startInstrumentAttachment(instrumentId, e = null) {
     drawConnections();
 }
 
-function addEquipment(type, placement = null) {
+function addEquipment(type, placement = null, options = {}) {
     if (typeof ensureBasisConfirmedBeforeModeling === 'function' && !ensureBasisConfirmedBeforeModeling()) {
         return null;
     }
@@ -1352,7 +1518,12 @@ function addEquipment(type, placement = null) {
     objDiv.dataset.type = type;
 
     const canvas = document.getElementById('canvas');
-    const objectPlacement = normalizeCanvasPlacement(placement || getDefaultCanvasPlacement(type));
+    const objectPlacement = normalizeCanvasPlacement(
+        placement
+        || (options.placementMode === 'ribbon-click'
+            ? getRibbonClickCanvasPlacement(type)
+            : getDefaultCanvasPlacement(type))
+    );
 
     objDiv.style.left = `${objectPlacement.left}px`;
     objDiv.style.top = `${objectPlacement.top}px`;
@@ -1386,6 +1557,7 @@ function addEquipment(type, placement = null) {
     applyObjectVisuals(newId);
     makeDraggable(objDiv);
     selectNode(newId, objDiv);
+    minimizeObjectTaskWindowAfterEquipmentAdd(newId);
     setAppMode('SELECT');
 
     return newId;

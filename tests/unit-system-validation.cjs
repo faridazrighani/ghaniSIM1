@@ -75,4 +75,10 @@ const inferredPressureDropHead = vm.runInContext(`getDisplayFieldMeta('valve', '
 assert(inferredPressureDropHead.quantity === 'head', 'Cv Pressure Drop Head should infer head quantity, not pressure');
 assert(inferredPressureDropHead.unit === 'ft', 'US Cv Pressure Drop Head display unit should be ft');
 
+const unitSystemSource = fs.readFileSync(path.join(projectRoot, 'core/unit-system.js'), 'utf8');
+const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
+assert(unitSystemSource.includes('basis-status-confirmed-clean'), 'Basis status pill should expose a confirmed/clean class');
+assert(styles.includes('@media (max-width: 640px)') && styles.includes('.basis-status-pill.basis-status-confirmed-clean'), 'Mobile layout should hide the confirmed/clean basis status pill');
+assert(styles.includes('(pointer: coarse)'), 'Cellular landscape hiding should be limited to coarse pointer devices');
+
 console.log('unit-system-validation: ok');

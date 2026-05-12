@@ -11,6 +11,7 @@ let objectPropertiesTaskRequestedNodeId = null;
 let taskWindowLauncherNodeId = null;
 let taskWindowLauncherKind = null;
 let fluidBasisSetupPrompt = null;
+let objectTaskMinimizedEntries = [];
 
 const FLUID_AUTO_NAMES = ['Water', 'Methanol', 'Palm Oil', 'Crude Oil'];
 
@@ -151,6 +152,167 @@ function updateTaskWindowMinimizeButton() {
     minimizeButton.title = minimized ? 'Restore' : 'Minimize';
 }
 
+function isObjectPropertiesTaskKind(kind) {
+    return kind === 'pipe' || kind === 'tank' || kind === 'object';
+}
+
+function getObjectTaskDockKey(kind, nodeId) {
+    return `${kind}:${nodeId}`;
+}
+
+function getObjectTaskNodeIdForKind(kind) {
+    if (kind === 'pipe') return pipePropertiesTaskNodeId;
+    if (kind === 'tank') return tankPropertiesTaskNodeId;
+    if (kind === 'object') return objectPropertiesTaskNodeId;
+    return null;
+}
+
+function clearObjectTaskNodeIdForKind(kind) {
+    if (kind === 'pipe') pipePropertiesTaskNodeId = null;
+    if (kind === 'tank') tankPropertiesTaskNodeId = null;
+    if (kind === 'object') objectPropertiesTaskNodeId = null;
+}
+
+function setObjectTaskDismissed(kind, nodeId) {
+    if (!nodeId) return;
+    if (kind === 'pipe') pipePropertiesTaskDismissedNodeId = nodeId;
+    if (kind === 'tank') tankPropertiesTaskDismissedNodeId = nodeId;
+    if (kind === 'object') objectPropertiesTaskDismissedNodeId = nodeId;
+}
+
+function getActiveObjectTaskRef() {
+    const taskWindow = document.getElementById('taskWindow');
+    const kind = taskWindow?.dataset.kind;
+    if (!taskWindow || taskWindow.hidden || !isObjectPropertiesTaskKind(kind)) return null;
+    const nodeId = taskWindow.dataset.nodeId || getObjectTaskNodeIdForKind(kind);
+    if (!nodeId || !globalModel?.[nodeId]) return null;
+    return {
+        kind,
+        nodeId,
+        title: document.getElementById('taskWindowTitle')?.textContent || getTaskWindowLauncherLabel(kind, globalModel[nodeId])
+    };
+}
+
+function getObjectTaskDockLabel(kind, nodeId) {
+    const node = globalModel?.[nodeId];
+    return node?.name || nodeId;
+}
+
+function getObjectTaskDockTitle(kind, nodeId, title = '') {
+    const node = globalModel?.[nodeId];
+    const label = getObjectTaskDockLabel(kind, nodeId);
+    const fullTitle = title || getTaskWindowLauncherLabel(kind, node);
+    return `${fullTitle} - ${label}`;
+}
+
+function ensureObjectTaskMinimizedDock() {
+    let dock = document.getElementById('objectTaskMinimizedDock');
+    if (dock) return dock;
+
+    dock = document.createElement('section');
+    dock.id = 'objectTaskMinimizedDock';
+    dock.className = 'object-task-minimized-dock';
+    dock.hidden = true;
+    dock.setAttribute('aria-label', 'Minimized object property windows');
+    document.body.appendChild(dock);
+    return dock;
+}
+
+function isObjectTaskDocked(kind, nodeId) {
+    return objectTaskMinimizedEntries.some(entry => entry.kind === kind && entry.nodeId === nodeId);
+}
+
+function removeObjectTaskDockEntry(kind, nodeId, options = {}) {
+    const previousLength = objectTaskMinimizedEntries.length;
+    objectTaskMinimizedEntries = objectTaskMinimizedEntries.filter(entry => !(entry.kind === kind && entry.nodeId === nodeId));
+    if (options.render !== false && previousLength !== objectTaskMinimizedEntries.length) {
+        renderObjectTaskMinimizedDock();
+    }
+}
+
+function addObjectTaskDockEntry(ref) {
+    if (!ref?.kind || !ref?.nodeId || !globalModel?.[ref.nodeId]) return;
+    removeObjectTaskDockEntry(ref.kind, ref.nodeId, { render: false });
+    objectTaskMinimizedEntries.push({
+        kind: ref.kind,
+        nodeId: ref.nodeId,
+        title: ref.title || getTaskWindowLauncherLabel(ref.kind, globalModel[ref.nodeId])
+    });
+    renderObjectTaskMinimizedDock();
+}
+
+function restoreObjectTaskDockEntry(kind, nodeId) {
+    if (!globalModel?.[nodeId]) {
+        removeObjectTaskDockEntry(kind, nodeId);
+        return;
+    }
+    removeObjectTaskDockEntry(kind, nodeId, { render: false });
+    if (kind === 'pipe') requestPipePropertiesTaskWindowOpen(nodeId);
+    if (kind === 'tank') requestTankPropertiesTaskWindowOpen(nodeId);
+    if (kind === 'object') requestObjectPropertiesTaskWindowOpen(nodeId);
+
+    const element = typeof getObjectElement === 'function' ? getObjectElement(nodeId) : null;
+    if (element && typeof selectNode === 'function') {
+        selectNode(nodeId, element);
+    } else if (typeof renderSidebar === 'function') {
+        renderSidebar(nodeId);
+    }
+    renderObjectTaskMinimizedDock();
+}
+
+function closeObjectTaskDockEntry(kind, nodeId) {
+    removeObjectTaskDockEntry(kind, nodeId);
+    setObjectTaskDismissed(kind, nodeId);
+}
+
+function renderObjectTaskMinimizedDock() {
+    const dock = ensureObjectTaskMinimizedDock();
+    if (!dock) return;
+
+    objectTaskMinimizedEntries = objectTaskMinimizedEntries.filter(entry => !!globalModel?.[entry.nodeId]);
+    dock.replaceChildren();
+    dock.hidden = objectTaskMinimizedEntries.length === 0;
+    if (dock.hidden) return;
+
+    objectTaskMinimizedEntries.forEach(entry => {
+        const item = document.createElement('div');
+        item.className = 'object-task-dock-item';
+        item.dataset.kind = entry.kind;
+        item.dataset.nodeId = entry.nodeId;
+        item.title = getObjectTaskDockTitle(entry.kind, entry.nodeId, entry.title);
+
+        const restore = document.createElement('button');
+        restore.type = 'button';
+        restore.className = 'object-task-dock-restore';
+        restore.textContent = getObjectTaskDockLabel(entry.kind, entry.nodeId);
+        restore.setAttribute('aria-label', `Restore ${item.title}`);
+        restore.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            restoreObjectTaskDockEntry(entry.kind, entry.nodeId);
+        });
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'object-task-dock-close';
+        close.textContent = 'X';
+        close.setAttribute('aria-label', `Close ${item.title}`);
+        close.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            closeObjectTaskDockEntry(entry.kind, entry.nodeId);
+        });
+
+        item.append(restore, close);
+        dock.appendChild(item);
+    });
+}
+
+function clearObjectTaskMinimizedDock() {
+    objectTaskMinimizedEntries = [];
+    renderObjectTaskMinimizedDock();
+}
+
 function setTaskWindowMinimized(minimized) {
     const taskWindow = document.getElementById('taskWindow');
     if (!taskWindow) return;
@@ -163,6 +325,19 @@ function minimizeTaskWindow() {
     const taskWindow = document.getElementById('taskWindow');
     if (!taskWindow || taskWindow.hidden) return;
     taskWindowDragState = null;
+    const activeObjectTask = getActiveObjectTaskRef();
+    if (activeObjectTask) {
+        addObjectTaskDockEntry(activeObjectTask);
+        taskWindow.hidden = true;
+        taskWindow.classList.remove('task-window-fluid-active', 'task-window-pipe-active', 'task-window-tank-active', 'task-window-object-active', 'task-window-minimized');
+        delete taskWindow.dataset.kind;
+        delete taskWindow.dataset.nodeId;
+        taskWindow.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('pipe-properties-task-open', 'tank-properties-task-open', 'object-properties-task-open');
+        clearObjectTaskNodeIdForKind(activeObjectTask.kind);
+        updateTaskWindowMinimizeButton();
+        return;
+    }
     setTaskWindowMinimized(true);
 }
 
@@ -273,6 +448,14 @@ function openTaskWindow(title, content, options = {}) {
 
     taskWindow.hidden = false;
     taskWindow.dataset.kind = options.kind || '';
+    if (options.nodeId) {
+        taskWindow.dataset.nodeId = options.nodeId;
+    } else {
+        delete taskWindow.dataset.nodeId;
+    }
+    if (isObjectPropertiesTaskKind(options.kind) && options.nodeId) {
+        removeObjectTaskDockEntry(options.kind, options.nodeId);
+    }
     taskWindow.classList.toggle('task-window-fluid-active', options.kind === 'fluid');
     taskWindow.classList.toggle('task-window-pipe-active', options.kind === 'pipe');
     taskWindow.classList.toggle('task-window-tank-active', options.kind === 'tank');
@@ -309,6 +492,7 @@ function closeTaskWindow(options = {}) {
         taskWindow.hidden = true;
         taskWindow.classList.remove('task-window-fluid-active', 'task-window-pipe-active', 'task-window-tank-active', 'task-window-object-active', 'task-window-minimized');
         delete taskWindow.dataset.kind;
+        delete taskWindow.dataset.nodeId;
         updateTaskWindowMinimizeButton();
     }
     document.body.classList.remove('pipe-properties-task-open', 'tank-properties-task-open', 'object-properties-task-open');
@@ -342,6 +526,15 @@ function closeObjectPropertiesTaskWindow() {
     if (taskWindow?.dataset.kind === 'object') closeTaskWindow({ markDismissed: false });
 }
 
+function closeFluidBasisTaskWindow() {
+    const taskWindow = document.getElementById('taskWindow');
+    if (taskWindow?.dataset.kind === 'fluid') {
+        closeTaskWindow({ markDismissed: false });
+        return;
+    }
+    closeTabletFluidBottomDock();
+}
+
 function requestPipePropertiesTaskWindowOpen(nodeId) {
     pipePropertiesTaskRequestedNodeId = nodeId || null;
     if (nodeId && pipePropertiesTaskDismissedNodeId === nodeId) {
@@ -350,7 +543,8 @@ function requestPipePropertiesTaskWindowOpen(nodeId) {
 }
 
 function isPipePropertiesTaskDismissed(nodeId) {
-    return !!(nodeId && pipePropertiesTaskDismissedNodeId === nodeId);
+    if (nodeId && pipePropertiesTaskRequestedNodeId === nodeId) return false;
+    return !!(nodeId && (pipePropertiesTaskDismissedNodeId === nodeId || isObjectTaskDocked('pipe', nodeId)));
 }
 
 function isTaskWindowOutsidePointerTarget(target, taskWindow) {
@@ -413,6 +607,7 @@ function openPipePropertiesTaskWindow(nodeId) {
         createPipePropertiesTaskRoot(nodeId),
         {
             kind: 'pipe',
+            nodeId,
             bodyClass: 'pipe-properties-task-body',
             preserveMinimized,
             resetPosition: !wasPipeTask,
@@ -434,6 +629,10 @@ function showPipePropertiesTaskNotice(nodeId) {
     if (!node) return;
     const dismissed = isPipePropertiesTaskDismissed(nodeId);
 
+    if (isObjectTaskDocked('pipe', nodeId)) {
+        hideTaskWindowLauncher('pipe', nodeId);
+        return;
+    }
     if (dismissed) {
         showTaskWindowLauncher('pipe', nodeId);
     } else {
@@ -449,7 +648,8 @@ function requestTankPropertiesTaskWindowOpen(nodeId) {
 }
 
 function isTankPropertiesTaskDismissed(nodeId) {
-    return !!(nodeId && tankPropertiesTaskDismissedNodeId === nodeId);
+    if (nodeId && tankPropertiesTaskRequestedNodeId === nodeId) return false;
+    return !!(nodeId && (tankPropertiesTaskDismissedNodeId === nodeId || isObjectTaskDocked('tank', nodeId)));
 }
 
 function createTankPropertiesTaskRoot(nodeId) {
@@ -496,6 +696,7 @@ function openTankPropertiesTaskWindow(nodeId) {
         createTankPropertiesTaskRoot(nodeId),
         {
             kind: 'tank',
+            nodeId,
             bodyClass: 'pipe-properties-task-body tank-properties-task-body',
             preserveMinimized,
             resetPosition: !wasTankTask,
@@ -517,6 +718,10 @@ function showTankPropertiesTaskNotice(nodeId) {
     if (!node) return;
     const dismissed = isTankPropertiesTaskDismissed(nodeId);
 
+    if (isObjectTaskDocked('tank', nodeId)) {
+        hideTaskWindowLauncher('tank', nodeId);
+        return;
+    }
     if (dismissed) {
         showTaskWindowLauncher('tank', nodeId);
     } else {
@@ -556,7 +761,8 @@ function requestObjectPropertiesTaskWindowOpen(nodeId) {
 }
 
 function isObjectPropertiesTaskDismissed(nodeId) {
-    return !!(nodeId && objectPropertiesTaskDismissedNodeId === nodeId);
+    if (nodeId && objectPropertiesTaskRequestedNodeId === nodeId) return false;
+    return !!(nodeId && (objectPropertiesTaskDismissedNodeId === nodeId || isObjectTaskDocked('object', nodeId)));
 }
 
 function createObjectPropertiesTaskRoot(nodeId) {
@@ -604,6 +810,7 @@ function openObjectPropertiesTaskWindow(nodeId) {
         createObjectPropertiesTaskRoot(nodeId),
         {
             kind: 'object',
+            nodeId,
             bodyClass: 'pipe-properties-task-body object-properties-task-body',
             preserveMinimized,
             resetPosition: !wasObjectTask,
@@ -625,6 +832,10 @@ function showObjectPropertiesTaskNotice(nodeId) {
     if (!node) return;
     const dismissed = isObjectPropertiesTaskDismissed(nodeId);
 
+    if (isObjectTaskDocked('object', nodeId)) {
+        hideTaskWindowLauncher('object', nodeId);
+        return;
+    }
     if (dismissed) {
         showTaskWindowLauncher('object', nodeId);
     } else {
@@ -751,7 +962,7 @@ function runFluidBasisUpdate(changedKey) {
 }
 
 function createFluidFieldRow(field, value, editable) {
-    const row = document.createElement('label');
+    const row = document.createElement(editable ? 'label' : 'div');
     row.className = 'fluid-field-row';
     row.dataset.fieldKey = field.key;
 
@@ -879,7 +1090,7 @@ function createBasisApplyBar() {
     button.type = 'button';
     button.className = 'fluid-basis-apply-btn';
     button.dataset.fluidAction = 'confirm-basis';
-    button.textContent = settings?.basisDirty ? 'Reconfirm Basis' : 'Apply Basis / Start Modeling';
+    button.textContent = 'Apply Basis / Start Modeling';
     bar.append(status, button);
     return bar;
 }
@@ -1148,7 +1359,7 @@ function handleFluidTaskAction(e) {
         e.preventDefault();
         if (typeof confirmBasisSetup === 'function') confirmBasisSetup();
         fluidBasisSetupPrompt = null;
-        renderFluidBasisTaskWindow();
+        closeFluidBasisTaskWindow();
     }
 }
 
@@ -1253,14 +1464,163 @@ function createFluidHelpList(items, className = 'fluid-help-list') {
     return list;
 }
 
+function createSrcHelpTextBlock(paragraphs = []) {
+    const wrap = document.createElement('div');
+    wrap.className = 'src-help-text';
+    paragraphs.forEach(text => {
+        const p = document.createElement('p');
+        p.textContent = text;
+        wrap.appendChild(p);
+    });
+    return wrap;
+}
+
+function createSrcHelpSection(title, content, open = false) {
+    const section = document.createElement('details');
+    section.className = 'fluid-help-card src-help-section';
+    section.open = open;
+    const summary = document.createElement('summary');
+    summary.textContent = title;
+    section.appendChild(summary);
+    if (content instanceof Node) {
+        section.appendChild(content);
+    }
+    return section;
+}
+
+function createSrcDecisionMatrix(rows = []) {
+    const labels = ['SRC Type', 'Pressure & Elevation', 'Flow Basis', 'Connection', 'Use Case'];
+    const matrix = document.createElement('div');
+    matrix.className = 'src-decision-matrix';
+
+    const header = document.createElement('div');
+    header.className = 'src-decision-header';
+    labels.forEach(label => {
+        const cell = document.createElement('div');
+        cell.textContent = label;
+        header.appendChild(cell);
+    });
+    matrix.appendChild(header);
+
+    rows.forEach(row => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'src-decision-row';
+        row.forEach((value, index) => {
+            const cell = document.createElement('div');
+            cell.className = 'src-decision-cell';
+            cell.dataset.label = labels[index];
+            cell.textContent = value;
+            rowEl.appendChild(cell);
+        });
+        matrix.appendChild(rowEl);
+    });
+
+    return matrix;
+}
+
+function createSrcHelpContent() {
+    const root = document.createElement('div');
+    root.className = 'fluid-help-layout src-help-layout';
+
+    root.append(
+        createFluidHelpCard('Fundamental SRC Boundary Concept', createSrcHelpTextBlock([
+            'SRC represents the upstream source boundary for the pump suction network. It supplies the hydraulic datum used by the solver: pressure energy, elevation head, and, when specified, flow rate.',
+            'The NPSH calculation does not depend on the source type name alone. The controlling inputs are Source Type, Boundary Data Source, and whether the connection is a semantic dashed attachment or a solid hydraulic path.',
+            'Open Tank / Reservoir and Pressurized Vessel are semantic equipment-boundary cases. They may inherit pressure and liquid surface elevation from attached equipment. External Header, Fixed Flow Source, and Standalone Boundary Source are direct hydraulic boundary cases and use SRC-entered boundary data.'
+        ])),
+        createFluidHelpCard('NPSH Data Selection Matrix', createSrcDecisionMatrix([
+            [
+                'Open Tank / Reservoir',
+                'With Boundary Data Source = Inherit, pressure is taken from the tank and elevation is tank base elevation plus liquid level. With Manual, pressure and elevation are taken from the SRC.',
+                'NPSH flow is the solved flow through the actual outlet pipe path from tank to pump. Dashed SRC flow is treated as tank feed/inventory balance, not as a pressure-loss path.',
+                'Use dashed SRC-to-tank attachment for inheritance, then a solid pipe from the tank outlet to the pump suction.',
+                'Atmospheric tank, sump, reservoir, or open storage tank.'
+            ],
+            [
+                'Pressurized Vessel',
+                'With Boundary Data Source = Inherit, pressure is taken from the vessel and elevation is vessel base elevation plus liquid level. With Manual, pressure and elevation are taken from the SRC.',
+                'NPSH flow is the solved flow through the actual outlet pipe path from vessel to pump. Dashed SRC flow is treated as vessel feed/inventory balance.',
+                'Use dashed SRC-to-vessel attachment for inheritance, then a solid pipe from the vessel outlet to the pump suction.',
+                'Drum, separator, horizontal/vertical vessel, or pressurized suction source.'
+            ],
+            [
+                'External Header / Pipe Tie-in',
+                'Pressure and elevation are always taken from the SRC. Pressure Energy Basis distinguishes static pressure from total/stagnation pressure.',
+                'Flow uses SRC input when Flow Input Mode is not Solve from Network. If Solve from Network is selected, flow is determined by the hydraulic network and other boundaries.',
+                'Use a solid hydraulic pipe from the SRC outlet to the modeled network. Dashed attachments are ignored for hydraulic calculations.',
+                'Tie-in to plant header, external pipeline, or upstream system not modeled in detail.'
+            ],
+            [
+                'Fixed Flow Source',
+                'Pressure and elevation are taken from the SRC.',
+                'SRC flow becomes the operating flow specification when Flow Input Mode is Mass Flow or Volumetric Flow. Avoid Solve from Network when a fixed flow is intended.',
+                'Use a solid hydraulic pipe from the SRC outlet to the modeled network.',
+                'Known upstream supply flow, such as an external pump or process unit imposing flow.'
+            ],
+            [
+                'Standalone Boundary Source',
+                'Pressure and elevation are taken from the SRC.',
+                'Flow is taken from SRC input when Mass Flow or Volumetric Flow is selected; it may be solved by the network when Flow Input Mode = Solve from Network.',
+                'Use a solid hydraulic pipe from the SRC outlet to the modeled network.',
+                'Generic upstream boundary when the source does not need to be represented as a tank, vessel, or header.'
+            ]
+        ])),
+        createSrcHelpSection('Boundary Data Source', createFluidHelpList([
+            'Manual means NPSH uses the pressure and elevation entered directly on the SRC object.',
+            'Inherit from Attached Equipment is valid only for Open Tank / Reservoir or Pressurized Vessel connected by a dashed semantic attachment to tank/vessel equipment.',
+            'When inheritance is active, pressure and liquid surface elevation are taken from the attached equipment. SRC pressure/elevation fields behave as effective readouts rather than the primary boundary definition.',
+            'For External Header, Fixed Flow Source, and Standalone Boundary Source, the model treats the SRC as a direct manual hydraulic boundary. Tank/vessel data are not inherited.'
+        ]), true),
+        createSrcHelpSection('Connection Rule: Dashed Attachment vs Solid Pipe', createFluidHelpList([
+            'A dashed SRC attachment is a semantic relationship used for equipment data inheritance and feed/inventory balance only.',
+            'Dashed SRC attachment is excluded from hydraulic traversal. It contributes no pipe length, no friction loss, and no minor-loss coefficient.',
+            'A solid pipe or hydraulic component is required before the solver can evaluate flow path, suction losses, high-point pressure warning, and pump NPSH.',
+            'For tank/vessel sources, connect SRC to the equipment with a dashed attachment, then connect the equipment outlet to pump suction with a solid hydraulic path.',
+            'For External Header, Fixed Flow Source, and Standalone Boundary Source, begin the solid hydraulic path directly from the SRC port.'
+        ]), true),
+        createSrcHelpSection('NPSH Terms Affected by SRC', createFluidHelpList([
+            'Conceptually, NPSHa = boundary pressure head + boundary elevation head - pump suction elevation - suction losses - vapor pressure head.',
+            'Boundary pressure head is based on absolute pressure. If pressure input basis is Gauge, the application adds standard atmospheric pressure.',
+            'For Open Tank / Reservoir and Pressurized Vessel with inherited data, the boundary elevation is the liquid surface elevation of the attached equipment.',
+            'For External Header, Fixed Flow Source, and Standalone Boundary Source, the boundary elevation is the Source/Tie-in Elevation entered on the SRC.',
+            'Flow rate affects velocity, Reynolds number, friction factor, major loss, minor loss, and therefore the suction-loss term in NPSHa.'
+        ])),
+        createSrcHelpSection('Recommended Engineering Workflow', createFluidHelpList([
+            '1. Identify the physical suction source: open tank, pressurized vessel, external header, fixed-flow supply, or generic boundary.',
+            '2. Select the SRC Source Type that represents that physical boundary.',
+            '3. For tank/vessel sources where NPSH should use equipment data, use dashed attachment and set Boundary Data Source = Inherit from Attached Equipment.',
+            '4. For header, fixed-flow, or standalone sources, enter pressure, pressure basis, elevation, temperature mode, and flow input on the SRC.',
+            '5. Create a solid hydraulic path to the pump suction. Without a solid path, NPSH evaluation will remain incomplete or will report warnings only.',
+            '6. Review the pump calculation trace to confirm suction boundary, elevation basis, pressure basis, flow basis, and suction losses.'
+        ])),
+        createSrcHelpSection('Common Modeling Errors to Avoid', createFluidHelpList([
+            'Treating a dashed SRC-to-tank/vessel attachment as a pipe. Dashed attachment is not a pressure-loss path.',
+            'Selecting Open Tank / Reservoir while entering pressure/elevation on SRC, when the intended boundary is the tank. Use Inherit from Attached Equipment for that case.',
+            'Selecting External Header and then relying on a dashed attachment to a tank. For this type, dashed attachment is ignored; use a solid hydraulic pipe from SRC.',
+            'Confusing gauge pressure and absolute pressure. Confirm that the pressure basis matches the field data source.',
+            'Using Fixed Flow Source while Flow Input Mode remains Solve from Network. Select Mass Flow or Volumetric Flow when the source flow must be fixed.'
+        ]))
+    );
+
+    return root;
+}
+
+function openSrcHelp() {
+    openTaskWindow('SRC Boundary Guidance', createSrcHelpContent(), {
+        bodyClass: 'fluid-help-body src-help-body',
+        resetScroll: true,
+        resetPosition: true
+    });
+}
+
 function createPropertySourceMapTable(trace) {
     const wrap = document.createElement('div');
     wrap.className = 'fluid-table-wrap';
     const table = document.createElement('table');
-    table.className = 'fluid-table';
+    table.className = 'fluid-table fluid-source-map-table';
     const head = document.createElement('thead');
     const headRow = document.createElement('tr');
-    ['Property', 'Current Value', 'Unit', 'Method', 'Formula / Dependency', 'Reference', 'Status'].forEach(label => {
+    ['Property', 'Status', 'Current Value', 'Unit', 'Method', 'Formula / Dependency', 'Reference / Audit Basis'].forEach(label => {
         const th = document.createElement('th');
         th.textContent = label;
         headRow.appendChild(th);
@@ -1272,12 +1632,12 @@ function createPropertySourceMapTable(trace) {
         const tr = document.createElement('tr');
         [
             row.property,
+            row.status || 'Needs Verification',
             formatFluidTaskNumber(row.value, getSourceMapDigits(row)),
             row.unit || '-',
             row.method || row.source || '-',
             row.formula || '-',
-            row.reference || '-',
-            row.status || 'Needs verification'
+            row.reference || '-'
         ].forEach(value => {
             const td = document.createElement('td');
             td.textContent = value;

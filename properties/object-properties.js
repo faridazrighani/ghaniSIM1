@@ -1846,12 +1846,16 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         const sourceMeaning = canUseSemanticAttachment
             ? 'Dashed attachment may inherit tank/vessel data; flow still needs a real hydraulic path.'
             : 'Solid hydraulic pipe from SRC is required for flow and pressure loss calculation.';
+        const sourceTypeMeaning = typeof getSourceTypeDescription === 'function'
+            ? getSourceTypeDescription(node)
+            : sourceMeaning;
         const elevationLabel = inheritedBoundary
             ? 'Liquid Level Elev. (Inherited)'
             : (node.props.sourceType === externalHeaderType ? 'Tie-in Elevation' : 'Source Elevation');
 
         appendSectionHeader(tbody, 'Source Definition');
         addRow('Source Type', node.props.sourceType, 'sourceType', false, '', 'select', sourceTypeOptions);
+        addRow('Type Meaning', sourceTypeMeaning, 'source-type-meaning', true);
         addRow('Boundary Role', sourceRole, 'source-boundary-role', true);
         addRow('Meaning', sourceMeaning, 'source-boundary-meaning', true);
 

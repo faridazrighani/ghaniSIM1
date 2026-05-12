@@ -147,6 +147,7 @@ function applySimulationState(jsonString) {
     
     currentSelectedNode = null;
     renderSidebar(null);
+    if (typeof clearObjectTaskMinimizedDock === 'function') clearObjectTaskMinimizedDock();
     updateSimulation({ renderSidebarAfter: false });
     drawConnections();
     if (typeof updateBasisStatusPill === 'function') updateBasisStatusPill();
@@ -208,6 +209,7 @@ function clearSimulationCanvas() {
 
     currentSelectedNode = null;
     renderSidebar(null);
+    if (typeof clearObjectTaskMinimizedDock === 'function') clearObjectTaskMinimizedDock();
     drawConnections();
     updateSimulation();
     if (typeof updateBasisStatusPill === 'function') updateBasisStatusPill();
@@ -489,6 +491,17 @@ function initMenuBar() {
                 e.preventDefault();
                 helpDropdown.classList.remove('show');
                 openAboutDialog();
+            });
+        }
+
+        const menuSrcHelp = document.getElementById('menu-src-help');
+        if (menuSrcHelp) {
+            menuSrcHelp.addEventListener('click', (e) => {
+                e.preventDefault();
+                helpDropdown.classList.remove('show');
+                if (typeof openSrcHelp === 'function') {
+                    openSrcHelp();
+                }
             });
         }
 

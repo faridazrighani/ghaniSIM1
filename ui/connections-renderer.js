@@ -236,11 +236,15 @@ function drawConnections() {
             e.preventDefault();
             e.stopPropagation();
             const pipeId = path.dataset.pipeId;
-            selectNode(pipeId, null);
+            document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
+            currentSelectedNode = pipeId;
             drawConnections();
             const routeStyle = globalModel[pipeId]?.props?.routeStyle || 'Straight';
             const nextRouteStyle = routeStyle === 'Elbow' ? 'Straight' : 'Elbow';
             const items = [];
+            if (typeof addUserTaskObjectPropertiesMenuItem === 'function') {
+                addUserTaskObjectPropertiesMenuItem(items, pipeId);
+            }
 
             if (pendingConnectionStart && pendingConnectionStart.kind === 'instrument') {
                 const tapLocation = getPipeLocationFromEvent(pipeId, e);

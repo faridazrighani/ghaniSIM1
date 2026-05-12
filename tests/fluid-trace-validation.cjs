@@ -126,6 +126,7 @@ const waterVaporHeadStep = waterTrace.steps.find(step => step.title === 'Vapor P
 
 assert(waterTrace.status === 'OK', `Expected water trace OK, got ${waterTrace.status}`);
 assert(waterTrace.inputBasis.propertyMethod.includes('IAPWS'), 'Expected water trace to include IAPWS method label');
+assert(waterTrace.inputBasis.propertyMethod.includes('IAPWS-based'), 'Expected water trace to use professional IAPWS-based method wording');
 assert(waterTrace.propertySourceMap.find(item => item.property === 'Density').source.includes('IAPWS'), 'Expected water density source classification');
 [
     'Density',
@@ -176,6 +177,18 @@ const invalidTrace = evaluateCustomAdvancedTrace({ density: 0, viscosity: 0, vap
 assert(invalidTrace.status === 'Needs Review', 'Expected invalid trace to need review');
 assert(invalidTrace.warnings.some(item => item.includes('Density must be greater than zero')), 'Expected density warning');
 assert(invalidTrace.warnings.some(item => item.includes('Vapor pressure must be zero or positive')), 'Expected vapor pressure warning');
+
+const taskWindowSource = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
+const toolbarSource = fs.readFileSync(path.join(projectRoot, 'toolbar/menu-bar.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(projectRoot, 'app.js'), 'utf8');
+assert(taskWindowSource.includes('Reference / Audit Basis'), 'Property Source Map should use academic audit-basis heading');
+assert(taskWindowSource.includes('fluid-source-map-table'), 'Property Source Map should use compact source-map table styling');
+assert(taskWindowSource.includes('function closeFluidBasisTaskWindow()'), 'Fluid Basis should have a dedicated close helper');
+assert(taskWindowSource.includes("taskWindow?.dataset.kind === 'fluid'"), 'Fluid Basis close helper should only close the Fluid Basis task window');
+assert(taskWindowSource.includes('closeFluidBasisTaskWindow();'), 'Applying Fluid Basis should close the Fluid Basis task window');
+assert(!taskWindowSource.includes('Reconfirm Basis'), 'Fluid Basis apply action should use one consistent apply/start label');
+assert(toolbarSource.includes('function openFluidBasis()'), 'Toolbar should keep the explicit Fluid Basis opener');
+assert(appSource.includes("btnFluidBasis.addEventListener('click', () => openFluidBasis())"), 'Fluid Basis ribbon button should reopen the Fluid Basis task window');
 
 console.log(JSON.stringify({
     passed: true,

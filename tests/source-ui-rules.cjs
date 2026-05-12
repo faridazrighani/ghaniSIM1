@@ -70,6 +70,10 @@ assert(
     vm.runInContext(`globalModel['SRC-100'].props.boundaryDataSource`, context) === 'Inherit from Attached Equipment',
     'Open Tank SRC attached to tank should default to inherited boundary data'
 );
+assert(
+    vm.runInContext(`getSourceTypeDescription(SOURCE_TYPE_OPEN_TANK).includes('Atmospheric tank')`, context),
+    'Open Tank source type should expose a clear UI description'
+);
 
 const hydraulicTypeConstants = [
     'SOURCE_TYPE_EXTERNAL_HEADER',
@@ -165,6 +169,15 @@ assert(
     Math.abs(vm.runInContext(`globalModel['SRC-100'].props.flow`, context) - 1) < 1e-9,
     'Mass-flow conversion should use SRC custom-temperature effective density when available'
 );
+
+const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
+const taskWindowSource = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
+assert(indexHtml.includes('id="menu-src-help"'), 'Help menu should expose SRC Boundary Guidance');
+assert(taskWindowSource.includes('function openSrcHelp()'), 'Task window should implement SRC help opener');
+assert(taskWindowSource.includes('NPSH Data Selection Matrix'), 'SRC help should include NPSH decision guidance');
+assert(taskWindowSource.includes('src-decision-matrix'), 'SRC help should use compact decision matrix layout');
+assert(taskWindowSource.includes('createSrcHelpSection'), 'SRC help should keep detailed guidance collapsible');
+assert(taskWindowSource.includes('Dashed SRC attachment is excluded from hydraulic traversal'), 'SRC help should explain dashed attachment behavior');
 
 console.log(JSON.stringify({
     passed: true,

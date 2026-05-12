@@ -43,6 +43,7 @@
         <div class="menu-dropdown" id="help-dropdown-container">
             <span class="menu-item" id="menu-help">Help</span>
             <div class="dropdown-content" id="dropdown-help">
+                <button type="button" id="menu-src-help">SRC Boundary Guidance</button>
                 <div class="dropdown-submenu">
                     <button type="button" id="menu-fluid-properties" class="dropdown-submenu-trigger" aria-haspopup="true" aria-expanded="false">Fluid Properties</button>
                     <div class="dropdown-submenu-content" id="dropdown-fluid-properties">
@@ -96,10 +97,25 @@
         <div class="toolbar-palette" id="toolbarPalette"></div>
 
         <div class="ribbon-divider"></div>
+
+        <section class="academic-identity" aria-label="Thesis identity">
+            <img class="academic-logo" src="png/untirta-75.webp" alt="Sultan Ageng Tirtayasa University logo">
+            <div class="academic-copy">
+                <div class="academic-university">Sultan Ageng Tirtayasa University &ndash; Mechanical Engineering</div>
+                <div class="academic-thesis" aria-label="Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on NPSH Analysis for Various Fluids.">
+                    <span class="academic-thesis-line">Modeling &amp; Simulation of a Pumping System for Evaluating Cavitation Potential</span>
+                    <span class="academic-thesis-line">in Centrifugal Pumps Based on NPSH Analysis for Various Fluids.</span>
+                </div>
+                <div class="academic-author">Bachelor&rsquo;s Thesis - Farid Azrighani et al.</div>
+            </div>
+        </section>
+
+        <div class="ribbon-divider academic-solve-divider"></div>
         
-        <button class="ribbon-btn" style="border: 1px solid #c3e6cb; background-color: #d4edda;">
+        <button class="ribbon-btn solve-ribbon-btn">
             <div class="ribbon-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <img class="solve-mobile-logo" src="png/untirta-75.webp" alt="" aria-hidden="true">
             </div>
             <span class="ribbon-label">Solve</span>
         </button>
@@ -231,6 +247,7 @@
     <script src="ui/connections-renderer.js"></script>
     <script src="ui/context-menu.js"></script>
     <script src="ui/canvas-manager.js"></script>
+    <script src="ui/form-field-accessibility.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

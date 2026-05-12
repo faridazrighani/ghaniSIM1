@@ -26,7 +26,17 @@ function showContextMenu(x, y, items) {
             item.active ? 'active' : ''
         ].filter(Boolean).join(' ');
         if (item.active) btn.setAttribute('aria-current', 'true');
-        btn.textContent = item.label;
+        if (item.description) {
+            btn.innerHTML = `
+                <span class="context-menu-label"></span>
+                <span class="context-menu-description"></span>
+            `;
+            btn.querySelector('.context-menu-label').textContent = item.label;
+            btn.querySelector('.context-menu-description').textContent = item.description;
+            btn.title = `${item.label}: ${item.description}`;
+        } else {
+            btn.textContent = item.label;
+        }
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             hideContextMenu();
