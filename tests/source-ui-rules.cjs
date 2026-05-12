@@ -147,6 +147,25 @@ semanticTypeConstants.forEach((typeConstant, index) => {
     );
 });
 
+vm.runInContext(`
+globalModel.FLUID = {
+    type: 'fluid',
+    name: 'Fluid Basis',
+    props: { density: 1000, temp: 25 }
+};
+globalModel['SRC-100'].props.temperatureMode = SOURCE_TEMP_MODE_CUSTOM;
+globalModel['SRC-100'].props.flowInputMode = SOURCE_FLOW_MODE_MASS;
+globalModel['SRC-100'].props.massFlow = 800;
+function getFluidPropsAtSourceTemperature() {
+    return { density: 800, viscosity: 1, vaporPressure: 0.02, temp: 60, warnings: [] };
+}
+syncSourceFlowFromInputMode('SRC-100');
+`, context);
+assert(
+    Math.abs(vm.runInContext(`globalModel['SRC-100'].props.flow`, context) - 1) < 1e-9,
+    'Mass-flow conversion should use SRC custom-temperature effective density when available'
+);
+
 console.log(JSON.stringify({
     passed: true,
     tankAttachAllowed,
@@ -155,6 +174,7 @@ console.log(JSON.stringify({
     externalHeaderLinks: 0,
     hydraulicTypesChecked: hydraulicTypeConstants.length,
     semanticTypesChecked: semanticTypeConstants.length,
+    customTemperatureFlowConversion: vm.runInContext(`globalModel['SRC-100'].props.flow`, context),
     convertedConnectionCount: vm.runInContext(`connections.length`, context),
     convertedAttachmentTarget: vm.runInContext(`sourceLinks[0]?.targetId`, context)
 }, null, 2));

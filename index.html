@@ -86,6 +86,10 @@
             </div>
             <span class="ribbon-label">Fluid Basis</span>
         </button>
+        <button class="basis-status-pill basis-status-unconfirmed" id="basisStatusPill" type="button" title="Open Fluid Basis and Unit Standard setup">
+            <span id="basisStatusFluid">Fluid: Water @ 25 deg C</span>
+            <span id="basisStatusUnits">Metric / European Engineering</span>
+        </button>
 
         <div class="ribbon-divider"></div>
         
@@ -130,63 +134,6 @@
             </section>
 
         </div>
-
-        <!-- Right Sidebar (Object Properties) -->
-        <div class="properties-sidebar">
-            <div class="sidebar-header">
-                <span class="sidebar-title">Object Properties</span>
-                <span class="pin-badge">Pinned</span>
-            </div>
-            
-            <div class="sidebar-content" id="sidebarContent">
-                <!-- Dynamic Content goes here -->
-                
-                <table class="prop-table" id="propTable">
-                    <thead>
-                        <tr>
-                            <th colspan="2" id="propTableHeader">Select an Object</th>
-                        </tr>
-                    </thead>
-                    <tbody id="propTableBody">
-                        <tr>
-                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
-                                Click on an equipment or stream on the canvas to view its properties here.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <div class="sidebar-footer-note" id="editorHint" style="display: none;">
-                    Double-click object to open full editor
-                </div>
-
-            </div>
-        </div>
-
-        <!-- Pump Sidebar (Operating Summary) -->
-        <aside class="pump-properties-sidebar" id="pumpPropertiesSidebar" hidden>
-            <div class="sidebar-header">
-                <span class="sidebar-title">Pump Properties</span>
-                <span class="pin-badge">Pump</span>
-            </div>
-
-            <div class="sidebar-content">
-                <table class="prop-table" id="pumpPropertiesTable">
-                    <thead>
-                        <tr>
-                            <th colspan="2" id="pumpPropertiesHeader">Select a Pump</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pumpPropertiesBody">
-                        <tr>
-                            <td colspan="2" style="text-align: center; color: #888; padding: 20px;">
-                                Select a pump to view operating results and system residuals.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </aside>
 
     </div>
 
@@ -247,6 +194,7 @@
     </div>
 
     <script src="formulas/constants.js"></script>
+    <script src="core/unit-system.js"></script>
     <script src="properties/objects/tank-properties.js"></script>
     <script src="properties/objects/pipe-properties.js"></script>
     <script src="properties/objects/pump-properties.js"></script>

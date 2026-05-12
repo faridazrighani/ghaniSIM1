@@ -27,6 +27,9 @@ function setSidebarReadout() {}
 function updatePumpChart() {}
 function renderSidebar() {}
 function updateAllObjectOperatingStatusVisuals() {}
+function ensureNodeResults(node) {
+    if (!node.results) node.results = {};
+}
 var globalModel = {};
 `, context, { filename: 'source-boundary-prelude.js' });
 
@@ -215,6 +218,31 @@ function evaluateNetwork(options = {}) {
             visualStyle: 'dashed'
         });
     }
+    if (options.attachSecondSourceToTank) {
+        globalModel['SRC-103'] = {
+            type: 'source',
+            name: 'SRC-103',
+            props: {
+                sourceType: options.secondSourceType || 'Open Tank / Reservoir',
+                boundaryDataSource: options.secondSourceBoundaryDataSource || 'Inherit from Attached Equipment',
+                pressureInputBasis: 'Gauge',
+                pressure: options.secondSourcePressure ?? 0,
+                elevation: options.secondSourceElevation ?? 0,
+                temperatureMode: 'Use Fluid Basis',
+                flowInputMode: 'Mass Flow',
+                flow: options.secondSourceFlow ?? 5,
+                massFlow: (options.secondSourceFlow ?? 5) * density
+            }
+        };
+        sourceLinks.push({
+            sourceId: 'SRC-103',
+            targetId: 'TK-101',
+            targetPort: '.port.inlet',
+            connectionType: 'semantic',
+            attachmentType: 'source-boundary',
+            visualStyle: 'dashed'
+        });
+    }
 
     const context = createPumpHydraulicContext('P-100', globalModel, connections, density, vaporPressure * 100000);
     const result = runPumpNpshEvaluation('P-100');
@@ -259,9 +287,9 @@ const attachedTank = evaluateNetwork({
     pumpSuctionElevation: 1,
     pipeLength: 0
 });
-assert(attachedTank.context.suctionPath.boundaryId === 'SRC-100', 'Expected attached SRC boundary on tank outlet path');
-assertClose('inherited source elevation', attachedTank.result.calculationTrace.boundary.elevation, 7, 0.001);
-assertClose('inherited source pressure', attachedTank.result.calculationTrace.boundary.absolutePressureBar, 1.413, 0.001);
+assert(attachedTank.context.suctionPath.boundaryId === 'TK-101', 'Expected tank to be the pump suction boundary');
+assertClose('tank boundary elevation', attachedTank.result.calculationTrace.boundary.elevation, 7, 0.001);
+assertClose('tank boundary pressure', attachedTank.result.calculationTrace.boundary.absolutePressureBar, 1.413, 0.001);
 assertClose('tank liquid level static contribution', attachedTank.result.calculationTrace.steps.find(step => step.title === 'Elevation Head').result, 6, 0.001);
 
 const standalone = evaluateNetwork({
@@ -286,13 +314,27 @@ const externalTotal = evaluateNetwork({
     diameter: 0.05,
     flow: 20
 });
+const externalStaticVelocityStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'Source Velocity Head');
+const externalStaticNpshaStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'NPSHa');
+const externalStaticPressureStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'Pressure Head');
+const externalStaticElevationStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'Elevation Head');
+const externalStaticLossStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'Suction Loss');
+const externalStaticVaporStep = externalStatic.result.calculationTrace.steps.find(step => step.title === 'Vapor Pressure Head');
+const externalTraceNpshaSum = externalStaticPressureStep.result
+    + externalStaticElevationStep.result
+    + externalStaticVelocityStep.result
+    - externalStaticLossStep.result
+    - externalStaticVaporStep.result;
+assertClose('external header source velocity head trace', externalStaticVelocityStep.result, externalStatic.snapshot.sourceVelocityHead, 0.001);
+assertClose('external header static NPSHa trace sum', externalTraceNpshaSum, externalStaticNpshaStep.result, 0.01);
+assertClose('external header total pressure source velocity head trace', externalTotal.result.calculationTrace.steps.find(step => step.title === 'Source Velocity Head').result, 0, 0.001);
 const externalDashedAttachment = evaluateNetwork({
     attachSourceToTank: true,
     suctionConnection: 'tank',
     sourceType: 'External Header / Pipe Tie-in',
     sourceBoundaryDataSource: 'Inherit from Attached Equipment'
 });
-assert(!externalDashedAttachment.context.suctionPath.boundaryId, 'External Header dashed attachment must not create a suction boundary');
+assert(externalDashedAttachment.context.suctionPath.boundaryId === 'TK-101', 'External Header dashed attachment should be ignored while the tank remains the suction boundary');
 assert(
     externalDashedAttachment.sourceBoundary.warnings.some(item => item.includes('solid hydraulic connection')),
     'Expected External Header dashed attachment to be ignored with a clear warning'
@@ -310,6 +352,25 @@ const elevationCase = evaluateNetwork({
     pipeLength: 0
 });
 assertClose('NPSHA elevation contribution', elevationCase.result.calculationTrace.steps.find(step => step.title === 'Elevation Head').result, 4, 0.001);
+
+const multiSourcePump = evaluateNetwork({
+    attachSourceToTank: true,
+    attachSecondSourceToTank: true,
+    suctionConnection: 'tank',
+    sourceType: 'Open Tank / Reservoir',
+    sourceBoundaryDataSource: 'Inherit from Attached Equipment',
+    tankBaseElevation: 2,
+    tankLiquidLevel: 5,
+    tankPressure: 0.4,
+    pumpSuctionElevation: 1,
+    pipeLength: 0
+});
+assert(multiSourcePump.context.suctionPath.boundaryId === 'TK-101', 'Multi-SRC tank feed should use the tank as the pump suction boundary');
+assert(multiSourcePump.result.status !== 'Incomplete', 'Multi-SRC tank feed must not make pump NPSH incomplete');
+assert(
+    !multiSourcePump.context.networkWarnings.some(item => item.includes('Multiple SRC boundaries')),
+    'Multi-SRC tank feed should not trigger nodal solver warning for pump suction'
+);
 
 const highPoint = evaluateNetwork({
     attachSourceToTank: true,
@@ -335,14 +396,99 @@ assert(
     'Expected over-specified fixed-flow/downstream-pressure warning'
 );
 
+const multiSourceTank = vm.runInContext(`
+(() => {
+    Object.keys(globalModel).forEach(key => delete globalModel[key]);
+    Object.assign(globalModel, {
+        FLUID: {
+            type: 'fluid',
+            name: 'Fluid Basis',
+            props: { density: 997, vaporPressure: 0.031698 }
+        },
+        'TK-100': {
+            type: 'tank',
+            name: 'TK-100',
+            props: {
+                pressureInputBasis: 'Gauge',
+                pressure: 0,
+                elevation: 0,
+                liquidLevel: 5
+            }
+        },
+        'SRC-100': {
+            type: 'source',
+            name: 'SRC-100',
+            props: {
+                sourceType: 'Open Tank / Reservoir',
+                flow: 104.81
+            }
+        },
+        'SRC-103': {
+            type: 'source',
+            name: 'SRC-103',
+            props: {
+                sourceType: 'Open Tank / Reservoir',
+                flow: 20.19
+            }
+        }
+    });
+    connections.splice(0, connections.length);
+    sourceLinks.splice(0, sourceLinks.length,
+        {
+            sourceId: 'SRC-100',
+            targetId: 'TK-100',
+            targetPort: '.port.inlet',
+            connectionType: 'semantic',
+            attachmentType: 'source-boundary',
+            visualStyle: 'dashed'
+        },
+        {
+            sourceId: 'SRC-103',
+            targetId: 'TK-100',
+            targetPort: '.port.inlet',
+            connectionType: 'semantic',
+            attachmentType: 'source-boundary',
+            visualStyle: 'dashed'
+        }
+    );
+    updateTankPressureReadout('TK-100');
+    return globalModel['TK-100'].results;
+})()
+`, context);
+assert(multiSourceTank.connectedSources.length === 2, 'Expected tank to track both attached SRC ids');
+assert(multiSourceTank.sourceFeedFlows.length === 2, 'Expected tank to expose per-SRC feed flow breakdown');
+assertClose('multi-source SRC-100 feed flow', multiSourceTank.sourceFeedFlows[0].flow, 104.81, 0.001);
+assertClose('multi-source SRC-103 feed flow', multiSourceTank.sourceFeedFlows[1].flow, 20.19, 0.001);
+assertClose('multi-source total SRC feed flow', multiSourceTank.sourceFeedFlow, 125, 0.001);
+assertClose('multi-source tank net flow', multiSourceTank.netFlow, 125, 0.001);
+assert(multiSourceTank.levelTrend === 'Rising', 'Expected positive tank net flow to show Rising level trend');
+assert(multiSourceTank.status === 'Advisory', 'Expected inventory imbalance alone to be advisory');
+assert(
+    multiSourceTank.warnings.some(item => item.includes('Tank inventory advisory')),
+    'Expected inventory advisory message for non-zero tank net flow'
+);
+
 console.log(JSON.stringify({
     passed: true,
     missingPathWarning: missingPath.context.networkWarnings[0],
     invalidPumpAttachmentWarning: invalidPumpAttachment.context.networkWarnings[0],
-    inheritedElevation: attachedTank.result.calculationTrace.boundary.elevation,
+    tankBoundaryElevation: attachedTank.result.calculationTrace.boundary.elevation,
     standaloneStatus: standalone.result.status,
     externalHeaderDelta: Number((externalStatic.snapshot.npsha - externalTotal.snapshot.npsha).toFixed(3)),
     externalDashedWarning: externalDashedAttachment.sourceBoundary.warnings[0],
     highPointWarning: highPoint.pipe.results.warnings[0],
-    overSpecifiedWarning: overSpecifiedWarnings[0]
+    overSpecifiedWarning: overSpecifiedWarnings[0],
+    multiSourceTank: {
+        connectedSources: multiSourceTank.connectedSources,
+        sourceFeedFlows: multiSourceTank.sourceFeedFlows,
+        totalSourceFeedFlow: multiSourceTank.sourceFeedFlow,
+        netFlow: multiSourceTank.netFlow,
+        levelTrend: multiSourceTank.levelTrend,
+        status: multiSourceTank.status
+    },
+    multiSourcePump: {
+        suctionBoundary: multiSourcePump.context.suctionPath.boundaryId,
+        status: multiSourcePump.result.status,
+        networkWarnings: multiSourcePump.context.networkWarnings
+    }
 }, null, 2));

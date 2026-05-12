@@ -80,9 +80,24 @@ function getSimulationState() {
 function applySimulationState(jsonString) {
     const data = JSON.parse(jsonString);
     if(!data.model || !data.connections) throw new Error("Invalid format");
+    const hadSettings = !!data.model.SETTINGS;
     
     Object.keys(globalModel).forEach(k => delete globalModel[k]);
     Object.assign(globalModel, data.model);
+    if (typeof ensureSimulationSettings === 'function') {
+        ensureSimulationSettings(globalModel);
+        if (!hadSettings && globalModel.SETTINGS?.props) {
+            globalModel.SETTINGS.props.unitStandard = typeof DEFAULT_UNIT_STANDARD !== 'undefined'
+                ? DEFAULT_UNIT_STANDARD
+                : 'Metric / European Engineering';
+            globalModel.SETTINGS.props.basisConfirmed = true;
+            globalModel.SETTINGS.props.basisDirty = false;
+            globalModel.SETTINGS.props.migratedFromLegacy = true;
+            globalModel.SETTINGS.props.lastConfirmedUnitStandard = globalModel.SETTINGS.props.unitStandard;
+            globalModel.SETTINGS.props.lastConfirmedFluid = globalModel.FLUID?.props?.fluidName || '';
+            globalModel.SETTINGS.props.lastConfirmedTemperature = globalModel.FLUID?.props?.temp ?? null;
+        }
+    }
     if (globalModel.FLUID) globalModel.FLUID.name = 'Fluid Basis';
     connections.splice(0, connections.length, ...data.connections);
     instrumentLinks.splice(0, instrumentLinks.length, ...(data.instrumentLinks || []));
@@ -105,7 +120,7 @@ function applySimulationState(jsonString) {
     canvas.querySelectorAll('.pfd-object').forEach(el => el.remove());
     
     for (let key in globalModel) {
-        if (key === 'FLUID' || globalModel[key].type === 'pipe') continue;
+        if (key === 'FLUID' || key === 'SETTINGS' || globalModel[key].type === 'pipe') continue;
         
         const node = globalModel[key];
         const div = document.createElement('div');
@@ -134,6 +149,7 @@ function applySimulationState(jsonString) {
     renderSidebar(null);
     updateSimulation({ renderSidebarAfter: false });
     drawConnections();
+    if (typeof updateBasisStatusPill === 'function') updateBasisStatusPill();
 }
 
 function captureState() {
@@ -159,6 +175,9 @@ function clearSimulationCanvas() {
     captureState();
     
     Object.keys(globalModel).forEach(k => delete globalModel[k]);
+    if (typeof createDefaultSimulationSettings === 'function') {
+        globalModel.SETTINGS = createDefaultSimulationSettings();
+    }
     globalModel["FLUID"] = { 
         type: "fluid", 
         name: "Fluid Basis", 
@@ -191,6 +210,7 @@ function clearSimulationCanvas() {
     renderSidebar(null);
     drawConnections();
     updateSimulation();
+    if (typeof updateBasisStatusPill === 'function') updateBasisStatusPill();
 }
 
 async function fileClose() {

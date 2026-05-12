@@ -23,6 +23,7 @@ const context = {
 };
 context.window = context;
 vm.createContext(context);
+const ATM_PRESSURE_BAR = 1.01325;
 
 vm.runInContext(`
 var globalModel = {};
@@ -79,7 +80,7 @@ function manualSuctionCase({ sourcePressure, sourceBasis, sourceElevation, pumpE
     const openingFraction = Math.max(0, Math.min(1, valveOpening / 100));
     const effectiveValveK = valveK / Math.pow(openingFraction, 2);
     const valveLoss = effectiveValveK * velocityHead;
-    const sourceAbsBar = sourceBasis === 'Gauge' ? sourcePressure + 1.013 : sourcePressure;
+    const sourceAbsBar = sourceBasis === 'Gauge' ? sourcePressure + ATM_PRESSURE_BAR : sourcePressure;
     const sourcePressureHead = sourceAbsBar * 100000 / (density * g);
     const vaporPressureHead = vaporPressureBarA * 100000 / (density * g);
     const npsha = sourcePressureHead + sourceElevation - valveLoss - pipeLoss - pumpElevation - vaporPressureHead;
@@ -287,9 +288,9 @@ assertClose('throttled-valve NPSHa', appThrottled.npsha, manualThrottled.npsha, 
 assertClose('throttled-valve suction loss', appThrottled.suctionLoss, manualThrottled.totalSuctionLoss, 0.01);
 assert(appThrottled.npsha < appOpen.npsha, 'Expected throttling suction valve to reduce NPSHa');
 
-const absoluteCase = { ...baseCase, sourceBasis: 'Absolute', sourcePressure: 1.013 };
+const absoluteCase = { ...baseCase, sourceBasis: 'Absolute', sourcePressure: ATM_PRESSURE_BAR };
 const appAbsolute = evaluateAppCase(absoluteCase);
-assertClose('gauge 0 bar vs absolute 1.013 bar NPSHa', appAbsolute.npsha, appOpen.npsha, 0.01);
+assertClose('gauge 0 bar vs absolute 1.01325 bar NPSHa', appAbsolute.npsha, appOpen.npsha, 0.01);
 
 const highVaporCase = { ...baseCase, vaporPressureBarA: 0.5 };
 const manualHighVapor = manualSuctionCase(highVaporCase);

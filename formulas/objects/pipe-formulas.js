@@ -1,5 +1,10 @@
 const PIPE_LAMINAR_REYNOLDS_LIMIT = 2300;
 const PIPE_TURBULENT_REYNOLDS_LIMIT = 4000;
+const PIPE_MOODY_RE_MIN = 1000;
+const PIPE_MOODY_RE_MAX = 100000000;
+const PIPE_MOODY_F_MIN = 0.008;
+const PIPE_MOODY_F_MAX = 0.12;
+const PIPE_MOODY_ROUGHNESS_CURVES = [0, 0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005];
 
 function getPipeFlowRegime(reynolds) {
     if (!Number.isFinite(reynolds) || reynolds <= 0) return 'Not calculated';
@@ -92,6 +97,9 @@ function calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverri
         const minorLoss = totalMinorK * velocityHead;
         const baseTotalLoss = majorLoss + minorLoss;
         const allowanceLoss = baseTotalLoss * allowanceFraction;
+        const sizeSource = typeof getPipeSizeSource === 'function'
+            ? getPipeSizeSource(seg)
+            : { status: 'User', source: 'User-entered internal diameter' };
         const materialSource = typeof getPipeMaterialSource === 'function'
             ? getPipeMaterialSource(seg)
             : { status: 'Typical', source: 'Typical engineering value' };
@@ -128,12 +136,68 @@ function calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverri
             allowanceFraction,
             allowanceLoss,
             totalLoss: baseTotalLoss + allowanceLoss,
+            sizeSource,
             materialSource,
             fittingSource
         });
     });
 
     return details;
+}
+
+function buildPipeMoodyCurve(label, relRoughness, reynoldsStart, reynoldsEnd, pointCount = 64) {
+    const points = [];
+    const logStart = Math.log10(reynoldsStart);
+    const logEnd = Math.log10(reynoldsEnd);
+    for (let i = 0; i < pointCount; i++) {
+        const fraction = pointCount === 1 ? 0 : i / (pointCount - 1);
+        const reynolds = Math.pow(10, logStart + (logEnd - logStart) * fraction);
+        const frictionFactor = relRoughness === null
+            ? 64 / reynolds
+            : calculateTurbulentFrictionFactor(reynolds, relRoughness);
+        points.push({
+            reynolds: roundPipeTraceNumber(reynolds, 0),
+            frictionFactor: roundPipeTraceNumber(frictionFactor, 6)
+        });
+    }
+    return { label, relRoughness, points };
+}
+
+function buildPipeMoodyChartData(segmentDetails = []) {
+    const markers = (segmentDetails || [])
+        .filter(detail => Number.isFinite(detail?.reynolds) && detail.reynolds > 0 && Number.isFinite(detail?.frictionFactor) && detail.frictionFactor > 0)
+        .map(detail => {
+            const relRoughness = detail.diameter > 0 ? detail.effectiveRoughness / detail.diameter : 0;
+            return {
+                index: detail.index,
+                name: detail.name || `Segment ${detail.index + 1}`,
+                reynolds: roundPipeTraceNumber(detail.reynolds, 0),
+                frictionFactor: roundPipeTraceNumber(detail.frictionFactor, 6),
+                relRoughness: roundPipeTraceNumber(relRoughness, 8),
+                flowRegime: detail.flowRegime || getPipeFlowRegime(detail.reynolds),
+                diameter: roundPipeTraceNumber(detail.diameter, 6),
+                effectiveRoughness: roundPipeTraceNumber(detail.effectiveRoughness, 10)
+            };
+        });
+
+    return {
+        xMin: PIPE_MOODY_RE_MIN,
+        xMax: PIPE_MOODY_RE_MAX,
+        yMin: PIPE_MOODY_F_MIN,
+        yMax: PIPE_MOODY_F_MAX,
+        laminarLimit: PIPE_LAMINAR_REYNOLDS_LIMIT,
+        turbulentLimit: PIPE_TURBULENT_REYNOLDS_LIMIT,
+        laminarCurve: buildPipeMoodyCurve('Laminar f = 64/Re', null, PIPE_MOODY_RE_MIN, PIPE_LAMINAR_REYNOLDS_LIMIT, 28),
+        curves: PIPE_MOODY_ROUGHNESS_CURVES.map(relRoughness => buildPipeMoodyCurve(
+            relRoughness === 0 ? 'smooth pipe' : `eps/D ${formatPipeTraceNumber(relRoughness, 6)}`,
+            relRoughness,
+            PIPE_TURBULENT_REYNOLDS_LIMIT,
+            PIPE_MOODY_RE_MAX
+        )),
+        markers,
+        isSolved: markers.length > 0,
+        note: 'Darcy friction factor chart. Fanning friction factor equals Darcy f / 4.'
+    };
 }
 
 function calculatePipeHeadLoss(flowRateM3H, pipeProps, fluidPropsOverride = null) {
@@ -323,6 +387,7 @@ function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, flu
             flowRegime: detail.flowRegime,
             warning: detail.regimeWarning,
             dataSources: {
+                size: detail.sizeSource,
                 material: detail.materialSource,
                 fitting: detail.fittingSource
             },
@@ -335,6 +400,18 @@ function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, flu
     const warnings = [
         ...(pipeResults?.warnings || []),
         ...segments.map(segment => segment.warning).filter(Boolean)
+    ];
+    const dependencyChain = [
+        'Solved hydraulic flow from the connected solid pipe path -> Q in m3/s for each pipe segment.',
+        'Pipe internal diameter -> cross-sectional area -> velocity -> velocity head.',
+        'Active Fluid Basis kinematic viscosity -> Reynolds number -> laminar/transitional/turbulent regime -> Darcy friction factor.',
+        'Pipe material roughness x aging factor -> effective roughness -> relative roughness -> Moody/Colebrook turbulent friction factor.',
+        'Segment length + diameter + Darcy friction factor + velocity head -> major pipe friction loss.',
+        'Fitting selection + quantity + additional K -> total minor-loss coefficient -> fitting/minor head loss.',
+        'Head loss allowance percent -> extra design/fouling loss added to major + minor loss.',
+        'Segment totals -> total pipe head loss used by the hydraulic network solver.',
+        'Elevation profile/high point + Fluid Basis vapor pressure -> high point vapor-pressure margin warning.',
+        'When this pipe is in the pump suction path, total pipe/fitting loss subtracts directly from NPSHA.'
     ];
 
     return {
@@ -363,18 +440,21 @@ function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, flu
             highPointPressure: pipeResults?.highPointPressure ?? null,
             highPointVaporMargin: pipeResults?.highPointVaporMargin ?? null
         },
+        moody: buildPipeMoodyChartData(segmentDetails),
         segments,
+        dependencyChain,
         warnings: [...new Set(warnings)],
         references: [
-            'Darcy-Weisbach major loss',
-            'K-based minor loss coefficient',
-            'Reynolds number with kinematic viscosity',
-            'High point pressure versus vapor pressure margin'
+            'pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf: internal pipe flow, Reynolds number, Darcy-Weisbach loss, Moody/Colebrook friction, and minor-loss coefficients.',
+            'pdf_ref/ref2-introduction-fluid-mechanics.pdf: steady-flow energy equation, pipe friction, and head-loss terms.',
+            'pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf: suction line losses and NPSHA margin context.',
+            'NASA Glenn Bernoulli equation: static pressure plus dynamic pressure/head interpretation for steady inviscid reference.',
+            'NIST SI Guide: pressure unit pascal and coherent SI unit conversions used for pressure/head checks.'
         ],
         notes: [
             'Friction factor shown is Darcy f, not Fanning f.',
             'Fluid viscosity basis is kinematic viscosity in cSt.',
-            'Roughness and fitting K defaults are typical engineering values unless marked User or Estimate.'
+            'Pipe size, roughness, and fitting K defaults are reference/typical engineering values unless marked User or Estimate.'
         ]
     };
 }

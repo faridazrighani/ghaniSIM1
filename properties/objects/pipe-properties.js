@@ -1,5 +1,29 @@
+const PIPE_PRESSURE_CLASS_OPTIONS = [
+    'ASME Class 150',
+    'ASME Class 300',
+    'ASME Class 600',
+    'PN10',
+    'PN16',
+    'PN25',
+    'PN40',
+    'User-defined'
+];
+
+const PIPE_END_CONNECTION_OPTIONS = [
+    'By piping class / compatible',
+    'Flanged RF',
+    'Butt weld',
+    'Threaded NPT',
+    'Socket weld',
+    'Wafer/Lug compatible',
+    'Grooved',
+    'User-defined'
+];
+
 const PIPE_SCHEMA = {
     routeStyle: { label: 'Pipe Routing', type: 'select', options: ['Straight', 'Elbow'], default: 'Straight' },
+    pressureClass: { label: 'Pipe Rating/Class', type: 'select', options: PIPE_PRESSURE_CLASS_OPTIONS, default: 'ASME Class 150' },
+    endConnection: { label: 'End Connection Basis', type: 'select', options: PIPE_END_CONNECTION_OPTIONS, default: 'By piping class / compatible' },
     elevationProfileMode: {
         label: 'Elevation Profile',
         type: 'select',
@@ -16,25 +40,34 @@ const PIPE_SCHEMA = {
 };
 
 const PIPE_SIZE_OPTIONS = [
-    { label: 'Custom diameter', diameter: null },
-    { label: 'NPS 1 - Sch 40', diameter: 0.02664 },
-    { label: 'NPS 1 - Sch 80', diameter: 0.02431 },
-    { label: 'NPS 1.5 - Sch 40', diameter: 0.04089 },
-    { label: 'NPS 1.5 - Sch 80', diameter: 0.03810 },
-    { label: 'NPS 2 - Sch 40', diameter: 0.05250 },
-    { label: 'NPS 2 - Sch 80', diameter: 0.04925 },
-    { label: 'NPS 3 - Sch 40', diameter: 0.07793 },
-    { label: 'NPS 3 - Sch 80', diameter: 0.07366 },
-    { label: 'NPS 4 - Sch 40', diameter: 0.10226 },
-    { label: 'NPS 4 - Sch 80', diameter: 0.09718 },
-    { label: 'NPS 6 - Sch 40', diameter: 0.15405 },
-    { label: 'NPS 6 - Sch 80', diameter: 0.14633 },
-    { label: 'NPS 8 - Sch 40', diameter: 0.20272 },
-    { label: 'NPS 8 - Sch 80', diameter: 0.19368 },
-    { label: 'NPS 10 - Sch 40', diameter: 0.25451 },
-    { label: 'NPS 10 - Sch 80', diameter: 0.24765 },
-    { label: 'NPS 12 - Sch 40', diameter: 0.30323 },
-    { label: 'NPS 12 - Sch 80', diameter: 0.28885 }
+    { label: 'Custom diameter', diameter: null, source: 'User-entered internal diameter', status: 'User' },
+    { label: 'DN 25 / NPS 1 - Sch 40', diameter: 0.02664, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 40 / NPS 1.5 - Sch 40', diameter: 0.04089, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 50 / NPS 2 - Sch 40', diameter: 0.05250, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 80 / NPS 3 - Sch 40', diameter: 0.07793, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 100 / NPS 4 - Sch 40', diameter: 0.10226, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 150 / NPS 6 - Sch 40', diameter: 0.15405, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 200 / NPS 8 - Sch 40', diameter: 0.20272, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 250 / NPS 10 - Sch 40', diameter: 0.25451, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'DN 300 / NPS 12 - Sch 40', diameter: 0.30323, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
+    { label: 'NPS 1 - Sch 40', diameter: 0.02664, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 1 - Sch 80', diameter: 0.02431, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 1.5 - Sch 40', diameter: 0.04089, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 1.5 - Sch 80', diameter: 0.03810, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 2 - Sch 40', diameter: 0.05250, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 2 - Sch 80', diameter: 0.04925, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 3 - Sch 40', diameter: 0.07793, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 3 - Sch 80', diameter: 0.07366, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 4 - Sch 40', diameter: 0.10226, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 4 - Sch 80', diameter: 0.09718, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 6 - Sch 40', diameter: 0.15405, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 6 - Sch 80', diameter: 0.14633, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 8 - Sch 40', diameter: 0.20272, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 8 - Sch 80', diameter: 0.19368, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 10 - Sch 40', diameter: 0.25451, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 10 - Sch 80', diameter: 0.24765, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 12 - Sch 40', diameter: 0.30323, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
+    { label: 'NPS 12 - Sch 80', diameter: 0.28885, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' }
 ];
 
 const PIPE_MATERIAL_OPTIONS = [
@@ -66,10 +99,21 @@ const PIPE_FITTING_OPTIONS = [
     { label: 'Tee - line flow flanged', k: 0.2, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
     { label: 'Tee - branch flow flanged', k: 1.0, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
     { label: 'Threaded union', k: 0.08, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: '90 elbow - long radius flanged', k: 0.2, source: 'Textbook/Crane-style typical long-radius elbow K', status: 'Typical' },
+    { label: '90 elbow - short radius flanged', k: 0.5, source: 'Textbook/Crane-style typical short-radius elbow K', status: 'Typical' },
+    { label: '45 elbow - flanged', k: 0.2, source: 'Textbook/Crane-style typical fitting K', status: 'Typical' },
+    { label: 'Concentric reducer - gradual', k: 0.15, source: 'Engineering screening value; verify geometry/vendor data', status: 'Estimate' },
+    { label: 'Sudden contraction', k: 0.5, source: 'Engineering screening value; depends on area ratio', status: 'Estimate' },
+    { label: 'Sudden expansion', k: 1.0, source: 'Engineering screening value; depends on area ratio', status: 'Estimate' },
+    { label: 'Y-strainer - clean', k: 2.0, source: 'Typical clean strainer screening value; verify vendor data', status: 'Estimate' },
+    { label: 'Basket strainer - clean', k: 1.5, source: 'Typical clean strainer screening value; verify vendor data', status: 'Estimate' },
     { label: 'Gate valve - fully open', k: 0.2, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
     { label: 'Globe valve - fully open', k: 10.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
     { label: 'Angle valve - fully open', k: 5.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
     { label: 'Ball valve - fully open', k: 0.05, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Butterfly valve - fully open', k: 0.4, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Plug valve - fully open', k: 0.4, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
+    { label: 'Control valve - generic open', k: 10.0, source: 'Screening value only; use vendor Cv for control valves', status: 'Estimate' },
     { label: 'Swing check valve', k: 2.0, source: 'Textbook/Crane-style typical valve K', status: 'Typical' },
     { label: PIPE_FITTING_CUSTOM, k: null, source: 'User-entered loss coefficient', status: 'User' }
 ];
@@ -103,6 +147,41 @@ function getPipeMaterialOption(label) {
 
 function getPipeFittingOption(label) {
     return PIPE_FITTING_OPTIONS.find(item => item.label === label) || PIPE_FITTING_OPTIONS[0];
+}
+
+function normalizePipePressureClass(value) {
+    return PIPE_PRESSURE_CLASS_OPTIONS.includes(value) ? value : 'ASME Class 150';
+}
+
+function normalizePipeEndConnection(value) {
+    return PIPE_END_CONNECTION_OPTIONS.includes(value) ? value : 'By piping class / compatible';
+}
+
+function getPipePressureClass(pipe) {
+    return normalizePipePressureClass(pipe?.props?.pressureClass);
+}
+
+function getPipeEndConnection(pipe) {
+    return normalizePipeEndConnection(pipe?.props?.endConnection);
+}
+
+function getPipeMaterialFamily(material) {
+    const label = String(material || '').toLowerCase();
+    if (label.includes('stainless')) return 'Stainless steel';
+    if (label.includes('pvc') || label.includes('plastic')) return 'PVC / plastic';
+    if (label.includes('cast iron')) return 'Cast iron';
+    if (label.includes('concrete')) return 'Concrete';
+    if (label.includes('custom')) return 'User-defined';
+    if (label.includes('commercial') || label.includes('steel') || label.includes('drawn tubing')) return 'Carbon steel';
+    return material || 'User-defined';
+}
+
+function getPipeSizeSource(segment) {
+    const option = getPipeSizeOption(segment?.pipeSize);
+    if (option.label === 'Custom diameter') {
+        return { status: 'User', source: 'User-entered internal diameter' };
+    }
+    return { status: option.status || 'Standard', source: option.source || 'NPS/Schedule internal diameter preset' };
 }
 
 function getPipeMaterialSource(segment) {
@@ -142,6 +221,75 @@ function getPipeSegmentTotalK(segment) {
     return getPipeFittingTotalK(segment) + getPipeAdditionalK(segment);
 }
 
+function isPipeValveLikeFitting(fittingType) {
+    const label = String(fittingType || '').toLowerCase();
+    return label.includes('valve') || label.includes('check');
+}
+
+function getPipeRepresentativeDiameter(pipe) {
+    if (!pipe || pipe.type !== 'pipe' || !pipe.props) return null;
+    normalizePipeProps(pipe.props);
+    const segment = (pipe.props.segments || []).find(item => parseFloat(item.diameter) > 0);
+    const diameter = parseFloat(segment?.diameter);
+    return Number.isFinite(diameter) && diameter > 0 ? diameter : null;
+}
+
+function getPipeRepresentativeSizeLabel(pipe) {
+    if (!pipe || pipe.type !== 'pipe' || !pipe.props) return '-';
+    normalizePipeProps(pipe.props);
+    const segment = (pipe.props.segments || []).find(item => parseFloat(item.diameter) > 0);
+    return segment?.pipeSize || 'Custom diameter';
+}
+
+function getPipeConnectedValveReferences(pipeId, model = globalModel, connectionList = connections) {
+    if (!pipeId || !model || !Array.isArray(connectionList)) return [];
+    return connectionList
+        .filter(conn => conn?.pipeId === pipeId && conn.connectionType !== 'semantic')
+        .flatMap(conn => [conn.from, conn.to]
+            .filter(nodeId => model[nodeId] && ['valve', 'checkValve'].includes(model[nodeId].type))
+            .map(nodeId => ({ nodeId, node: model[nodeId], connection: conn })));
+}
+
+function getPipeValveCompatibilityWarnings(pipeId, model = globalModel, connectionList = connections) {
+    const pipe = model?.[pipeId];
+    if (!pipe || pipe.type !== 'pipe' || !pipe.props) return [];
+
+    normalizePipeProps(pipe.props);
+    const warnings = [];
+    const connectedValves = getPipeConnectedValveReferences(pipeId, model, connectionList);
+    const hasPhysicalValveObject = connectedValves.length > 0;
+    const valveLikeSegments = (pipe.props.segments || []).filter(segment => (
+        isPipeValveLikeFitting(segment.fittingType)
+        && Math.max(0, parseFloat(segment.fittingQuantity) || 0) > 0
+    ));
+
+    if (hasPhysicalValveObject && valveLikeSegments.length) {
+        const fittingNames = [...new Set(valveLikeSegments.map(segment => segment.fittingType).filter(Boolean))].join(', ');
+        const valveIds = [...new Set(connectedValves.map(ref => ref.nodeId))].join(', ');
+        warnings.push(`${pipeId} has valve-like fitting K (${fittingNames}) and is connected to valve object(s) ${valveIds}; confirm this is not double-counting valve loss.`);
+    }
+
+    const pipeDiameter = getPipeRepresentativeDiameter(pipe);
+    connectedValves.forEach(ref => {
+        const valveDiameter = parseFloat(ref.node?.props?.diameter);
+        if (!Number.isFinite(pipeDiameter) || pipeDiameter <= 0 || !Number.isFinite(valveDiameter) || valveDiameter <= 0) return;
+        const mismatchFraction = Math.abs(valveDiameter - pipeDiameter) / pipeDiameter;
+        if (mismatchFraction > 0.02) {
+            warnings.push(`${ref.nodeId} hydraulic diameter (${valveDiameter.toFixed(5)} m) differs from ${pipeId} representative ID (${pipeDiameter.toFixed(5)} m); verify reducer/expander or valve size.`);
+        }
+    });
+
+    if (typeof getValveCompatibilityWarnings === 'function') {
+        connectedValves.forEach(ref => {
+            getValveCompatibilityWarnings(ref.nodeId, model, connectionList).forEach(warning => {
+                if (warning) warnings.push(warning);
+            });
+        });
+    }
+
+    return [...new Set(warnings)];
+}
+
 function normalizeOptionalPipeNumber(value) {
     const parsed = parseFloat(value);
     return Number.isFinite(parsed) ? parsed : '';
@@ -150,6 +298,8 @@ function normalizeOptionalPipeNumber(value) {
 function normalizePipeProps(pipeProps) {
     if (!pipeProps) return { segments: [] };
     pipeProps.routeStyle = pipeProps.routeStyle || 'Straight';
+    pipeProps.pressureClass = normalizePipePressureClass(pipeProps.pressureClass);
+    pipeProps.endConnection = normalizePipeEndConnection(pipeProps.endConnection);
     pipeProps.elevationProfileMode = pipeProps.elevationProfileMode || 'End Elevations';
     pipeProps.roughnessAgingFactor = Math.max(0, parseFloat(pipeProps.roughnessAgingFactor) || 1);
     pipeProps.headLossAllowancePercent = Math.max(0, parseFloat(pipeProps.headLossAllowancePercent) || 0);

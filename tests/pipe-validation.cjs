@@ -6,7 +6,9 @@ const projectRoot = path.resolve(__dirname, '..');
 const scriptFiles = [
     'formulas/constants.js',
     'properties/objects/pipe-properties.js',
+    'properties/objects/valve-properties.js',
     'formulas/objects/pipe-formulas.js',
+    'formulas/objects/valve-formulas.js',
     'formulas/objects/hydraulic-network-formulas.js'
 ];
 
@@ -75,6 +77,11 @@ const expectedMajorLoss = majorOnly.frictionFactor * (10 / 0.1) * velocityHead;
 assertClose('velocity', majorOnly.velocity, velocity, 1e-9);
 assertClose('Darcy-Weisbach major loss', majorOnly.majorLoss, expectedMajorLoss, 1e-9);
 assert(majorOnly.flowRegime === 'Turbulent', `Expected turbulent flow, got ${majorOnly.flowRegime}`);
+const moodyData = vm.runInContext('buildPipeMoodyChartData(calculatePipeHydraulicSegments(10, globalModel["PIPE-1"].props))', context);
+assert(moodyData.markers.length === 1, 'Expected Moody chart marker for solved pipe segment');
+assert(moodyData.markers[0].frictionFactor === Number(majorOnly.frictionFactor.toFixed(6)), 'Expected Moody marker to use calculated Darcy friction factor');
+assert(moodyData.curves.length >= 6, 'Expected Moody chart turbulent roughness curves');
+assert(moodyData.laminarCurve.points.length > 5, 'Expected Moody chart laminar curve');
 
 const minorPipe = structuredClone(basePipe);
 minorPipe.segments[0].fittingType = 'Custom K';
@@ -93,6 +100,7 @@ const allowanceResult = evaluatePipe(allowancePipe, 10)[0];
 assertClose('effective roughness aging', allowanceResult.effectiveRoughness, basePipe.segments[0].roughness * 2, 1e-12);
 assertClose('head loss allowance', allowanceResult.allowanceLoss, allowanceResult.baseTotalLoss * 0.2, 1e-12);
 assertClose('allowed total loss', allowanceResult.totalLoss, allowanceResult.baseTotalLoss * 1.2, 1e-12);
+assert(allowanceResult.sizeSource.status === 'User', 'Expected custom diameter source status');
 assert(allowanceResult.materialSource.status === 'Typical', 'Expected material source status');
 assert(allowanceResult.fittingSource.status === 'Exact', 'Expected fitting source status for None');
 
@@ -259,30 +267,166 @@ assert(pipeTrace.segments.length === 2, 'Expected trace for two segments');
 assert(pipeTrace.segments[0].steps.some(step => step.title === 'Area'), 'Expected area step in trace');
 assert(pipeTrace.segments[0].steps.some(step => step.title === 'Reynolds Number'), 'Expected Reynolds step in trace');
 assert(pipeTrace.segments[0].steps.some(step => step.title === 'Major Loss'), 'Expected major loss step in trace');
+assert(pipeTrace.segments[0].dataSources.size.status === 'User', 'Expected pipe trace size source map');
 assert(pipeTrace.segments[1].pressureSteps.some(step => step.title === 'High Point Vapor Margin'), 'Expected high point margin pressure step');
 assert(pipeTrace.totals.totalLoss > 0, 'Expected positive total loss in trace');
 assert(pipeTrace.notes.some(note => note.includes('Darcy')), 'Expected Darcy friction note in trace');
+assert(pipeTrace.dependencyChain.some(item => item.includes('NPSHA')), 'Expected pipe/fitting dependency chain to expose NPSHA role');
+assert(pipeTrace.references.some(item => item.includes('pdf_ref/ref4')), 'Expected pipe trace to include local NPSH reference');
 
-const sidebar = fs.readFileSync(path.join(projectRoot, 'ui/sidebar-properties.js'), 'utf8');
+const valveCompatibility = vm.runInContext(`
+(() => {
+    globalModel = {
+        'PIPE-3': {
+            type: 'pipe',
+            name: 'PIPE-3',
+            props: {
+                routeStyle: 'Straight',
+                elevationProfileMode: 'End Elevations',
+                segments: [{
+                    name: 'Segment 1',
+                    pipeSize: 'NPS 4 - Sch 40',
+                    material: 'Commercial steel',
+                    diameter: 0.1,
+                    length: 10,
+                    roughness: 0.000045,
+                    fittingType: 'None',
+                    fittingQuantity: 0,
+                    fittingK: 0,
+                    minorLoss: 0
+                }]
+            }
+        },
+        'V-100': {
+            type: 'valve',
+            name: 'V-100',
+            props: {
+                valveType: 'Gate Valve',
+                lossModel: 'K coefficient',
+                flowCharacteristic: 'Linear',
+                kValue: 0.2,
+                diameter: 0.05,
+                opening: 100
+            }
+        },
+        A: { type: 'junction', props: {} }
+    };
+    connections = [{ from: 'V-100', fromPort: '.port.outlet', to: 'A', toPort: '.port.inlet', pipeId: 'PIPE-3', connectionType: 'hydraulic' }];
+    const audit = updateValveCompatibilityResult('V-100', globalModel, connections, { syncDiameter: true });
+    globalModel['PIPE-3'].props.segments[0].fittingType = 'Gate valve - fully open';
+    globalModel['PIPE-3'].props.segments[0].fittingQuantity = 1;
+    const doubleCountWarnings = getPipeValveCompatibilityWarnings('PIPE-3', globalModel, connections);
+    globalModel['PIPE-4'] = {
+        type: 'pipe',
+        name: 'PIPE-4',
+        props: {
+            routeStyle: 'Straight',
+            elevationProfileMode: 'End Elevations',
+            segments: [{
+                name: 'Segment 1',
+                pipeSize: 'NPS 2 - Sch 40',
+                material: 'Commercial steel',
+                diameter: 0.05,
+                length: 10,
+                roughness: 0.000045,
+                fittingType: 'None',
+                fittingQuantity: 0,
+                fittingK: 0,
+                minorLoss: 0
+            }]
+        }
+    };
+    connections.push({ from: 'B', fromPort: '.port.outlet', to: 'V-100', toPort: '.port.inlet', pipeId: 'PIPE-4', connectionType: 'hydraulic' });
+    const ambiguousAudit = updateValveCompatibilityResult('V-100', globalModel, connections, { syncDiameter: true });
+    globalModel['CV-100'] = {
+        type: 'checkValve',
+        name: 'CV-100',
+        props: {
+            lossModel: 'K coefficient',
+            kValue: 2,
+            diameter: 0.1,
+            reverseFlow: 'Blocked'
+        }
+    };
+    connections = [{ from: 'CV-100', fromPort: '.port.inlet', to: 'A', toPort: '.port.inlet', pipeId: 'PIPE-3', connectionType: 'hydraulic' }];
+    const checkValveAudit = updateValveCompatibilityResult('CV-100', globalModel, connections, { syncDiameter: true });
+    return {
+        inheritedDiameter: globalModel['V-100'].props.diameter,
+        audit,
+        doubleCountWarnings,
+        ambiguousAudit,
+        checkValveAudit
+    };
+})()
+`, context);
+assertClose('valve inherited diameter', valveCompatibility.inheritedDiameter, 0.10226, 1e-12);
+assert(valveCompatibility.audit.diameterBasis.includes('Inherited from PIPE-3'), 'Expected valve diameter inheritance basis');
+assert(valveCompatibility.audit.sizeMatchStatus === 'Match', 'Expected matching valve/pipe size status');
+assert(valveCompatibility.audit.boreBasis.includes('Full bore'), 'Expected gate valve common full-bore default');
+assert(valveCompatibility.audit.specBasis.includes('ASME Class 150'), 'Expected common pressure class default');
+assert(valveCompatibility.audit.equivalentLossText.includes('Equivalent Cv'), 'Expected K-to-Cv cross-check');
+assert(valveCompatibility.audit.severity === 'OK', 'Expected OK severity for common default compatible valve');
+assert(valveCompatibility.audit.lossSourceText.includes('Typical'), 'Expected default K source map');
+assert(valveCompatibility.doubleCountWarnings.some(item => item.includes('double-counting')), 'Expected pipe/valve double-counting warning');
+assert(valveCompatibility.ambiguousAudit.sizeMatchStatus === 'Ambiguous', 'Expected ambiguous size match status');
+assert(valveCompatibility.ambiguousAudit.severity === 'Review', 'Expected review severity for ambiguous pipe IDs');
+assert(valveCompatibility.ambiguousAudit.warnings.some(item => item.includes('different IDs')), 'Expected valve pipe size mismatch warning');
+assert(valveCompatibility.checkValveAudit.severity === 'Critical', 'Expected critical severity for reversed check valve');
+assert(valveCompatibility.checkValveAudit.warnings.some(item => item.includes('check valve orientation')), 'Expected check valve orientation audit');
+
+const taskProperties = fs.readFileSync(path.join(projectRoot, 'ui/sidebar-properties.js'), 'utf8');
+const objectProperties = fs.readFileSync(path.join(projectRoot, 'properties/object-properties.js'), 'utf8');
+const valveProperties = fs.readFileSync(path.join(projectRoot, 'properties/objects/valve-properties.js'), 'utf8');
+const canvasManager = fs.readFileSync(path.join(projectRoot, 'ui/canvas-manager.js'), 'utf8');
 const taskWindow = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
 const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
-assert(sidebar.includes('bar a'), 'Expected pipe pressure labels to use bar a');
-assert(sidebar.includes('Darcy f'), 'Expected segment table to label Darcy friction factor');
-assert(sidebar.includes('High Point Margin'), 'Expected high point vapor margin readout');
-assert(sidebar.includes('Allowance Loss'), 'Expected allowance loss readout');
-assert(sidebar.includes('eps eff'), 'Expected effective roughness readout');
-assert(sidebar.includes('Calculation Trace / Step-by-step Report'), 'Expected pipe calculation trace report in sidebar');
-assert(sidebar.includes('data-label="Formula"'), 'Expected responsive pipe trace table labels');
+assert(taskProperties.includes('bar a'), 'Expected pipe pressure labels to use bar a');
+assert(taskProperties.includes('Darcy f'), 'Expected segment table to label Darcy friction factor');
+assert(taskProperties.includes('High Point Margin'), 'Expected high point vapor margin readout');
+assert(taskProperties.includes('Allowance Loss'), 'Expected allowance loss readout');
+assert(taskProperties.includes('eps eff'), 'Expected effective roughness readout');
+assert(taskProperties.includes('Calculation Trace / Step-by-step Report'), 'Expected pipe calculation trace report in task window');
+assert(taskProperties.includes('Dependency Chain'), 'Expected pipe calculation trace report to render dependency chain');
+assert(taskProperties.includes('Pipe Size Basis'), 'Expected pipe size source map in calculation trace');
+assert(taskProperties.includes('data-label="Formula"'), 'Expected responsive pipe trace table labels');
+assert(taskProperties.includes('renderPipeMoodyChart'), 'Expected Moody chart renderer in pipe trace');
+assert(taskProperties.includes('Moody Chart / Friction Factor Check'), 'Expected Moody chart section label');
+assert(taskProperties.includes('Darcy friction factor'), 'Expected Moody chart to label Darcy friction factor');
+assert(objectProperties.includes('Pipe / Valve Compatibility'), 'Expected valve compatibility audit in object properties');
+assert(objectProperties.includes('Calculated Valve Readout'), 'Expected valve calculated readout section');
+assert(objectProperties.includes('renderValveCalculationTraceReport'), 'Expected valve calculation trace renderer');
+assert(objectProperties.includes('Size Match'), 'Expected valve size match audit row');
+assert(objectProperties.includes('Equivalent Loss'), 'Expected valve equivalent K/Cv audit row');
+assert(objectProperties.includes('Severity'), 'Expected valve compatibility severity row');
+assert(valveProperties.includes('Bore Type'), 'Expected valve bore type property');
+assert(valveProperties.includes('ASME Class 150'), 'Expected common pressure class defaults');
+assert(valveProperties.includes('Reducer/Expander Basis'), 'Expected reducer/expander basis property');
 assert(taskWindow.includes('openPipePropertiesTaskWindow'), 'Expected pipe properties to open in task window');
 assert(taskWindow.includes('task-window-minimized'), 'Expected task window minimize state handling');
 assert(taskWindow.includes('clampTaskWindowToViewport'), 'Expected task window viewport clamping for mobile/tablet');
 assert(taskWindow.includes('resetScroll'), 'Expected pipe task window to reset scroll on fresh open');
+assert(taskWindow.includes('minimizeTaskWindowOnOutsidePointerDown'), 'Expected outside click minimize for task window');
+assert(taskWindow.includes('requestPipePropertiesTaskWindowOpen'), 'Expected explicit pipe click reopen state for pipe task window');
+assert(taskWindow.includes('isTaskWindowOutsidePointerTarget'), 'Expected task window to ignore clicks inside the window');
+assert(taskWindow.includes('minimizeTaskWindow();'), 'Expected outside click to minimize the active task window');
+assert(taskWindow.includes('isTaskWindowMinimized()) return'), 'Expected minimized task window to ignore outside minimize handling');
+assert(taskWindow.includes('isPipePropertiesTaskDismissed'), 'Expected dismissed pipe task guard');
+assert(taskWindow.includes('previousPipeTaskNodeId === nodeId'), 'Expected minimized state to persist only for the same selected pipe');
+assert(canvasManager.includes('requestPipePropertiesTaskWindowOpen(nodeId)'), 'Expected pipe selection to explicitly reopen task window');
+assert(taskProperties.includes('isPipePropertiesTaskDismissed'), 'Expected task window flow to respect dismissed pipe task window');
 assert(indexHtml.includes('taskWindowMinimize'), 'Expected task window minimize control');
 assert(styles.includes('task-window-pipe-active'), 'Expected responsive pipe task window styling');
 assert(styles.includes('overflow-x: hidden'), 'Expected task window body to prevent whole-window horizontal scrolling');
-assert(styles.includes('pipe-properties-task-open'), 'Expected mobile sidebar suppression while pipe task is open');
+assert(!indexHtml.includes('properties-sidebar'), 'Expected legacy object sidebar DOM to be removed');
+assert(!indexHtml.includes('pump-properties-sidebar'), 'Expected legacy pump sidebar DOM to be removed');
+assert(!styles.includes('.properties-sidebar'), 'Expected legacy object sidebar CSS to be removed');
+assert(!styles.includes('.pump-properties-sidebar'), 'Expected legacy pump sidebar CSS to be removed');
 assert(styles.includes('pipe-trace-table td::before'), 'Expected responsive card labels for pipe trace steps');
+assert(styles.includes('pipe-moody-svg'), 'Expected responsive Moody chart styling');
+assert(styles.includes('.task-window.task-window-pipe-active .pipe-trace-table'), 'Expected pipe trace table to have task-window scoped fit rules');
+assert(styles.includes('.task-window.task-window-pipe-active .pipe-moody-card'), 'Expected Moody chart card to have task-window scoped fit rules');
+assert(styles.includes('overflow-wrap: anywhere'), 'Expected long pipe trace formulas and references to wrap instead of clipping');
 
 console.log(JSON.stringify({
     passed: true,
@@ -290,6 +434,11 @@ console.log(JSON.stringify({
     minorLoss: Number(minorResult.minorLoss.toFixed(6)),
     allowanceLoss: Number(allowanceResult.allowanceLoss.toFixed(6)),
     multiSegmentLoss: Number(multiHeadLoss.toFixed(6)),
+    moody: {
+        markers: moodyData.markers.length,
+        curves: moodyData.curves.length,
+        frictionFactor: moodyData.markers[0].frictionFactor
+    },
     regimes,
     elevationModes: {
         ignoreStart: ignoreElevation.startElevation,

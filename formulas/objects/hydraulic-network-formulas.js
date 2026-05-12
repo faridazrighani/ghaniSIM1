@@ -142,7 +142,8 @@ function getNodeAbsolutePressureForHydraulics(node) {
     const pressure = toHydraulicNumber(node.props.pressure, NaN);
     const basis = node.props.pressureInputBasis || 'Absolute';
     if (!Number.isFinite(pressure)) return null;
-    return basis === 'Gauge' ? pressure + 1.013 : pressure;
+    const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
+    return basis === 'Gauge' ? pressure + atm : pressure;
 }
 
 function hasFiniteProp(props, key) {
@@ -322,6 +323,387 @@ function resolveSourceBoundaryData(sourceIdOrNode, model = globalModel) {
     };
 }
 
+function roundSourceTraceNumber(value, digits = 3) {
+    const numeric = parseFloat(value);
+    if (!Number.isFinite(numeric)) return null;
+    return Number(numeric.toFixed(digits));
+}
+
+function formatSourceTraceNumber(value, digits = 3) {
+    const numeric = parseFloat(value);
+    if (!Number.isFinite(numeric)) return '-';
+    const abs = Math.abs(numeric);
+    if (abs > 0 && abs < 0.001) return numeric.toExponential(6);
+    return numeric.toFixed(digits);
+}
+
+function createSourceTraceStep(title, formula, substitution, result, unit = '', reference = '') {
+    return { title, formula, substitution, result, unit, reference };
+}
+
+function getSourceTraceHydraulicConnections(
+    sourceId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : [])
+) {
+    return (connectionList || [])
+        .map(conn => typeof orientHydraulicConnection === 'function' ? orientHydraulicConnection(conn, model) : conn)
+        .filter(conn => conn && conn.pipeId && conn.connectionType !== 'semantic' && (conn.from === sourceId || conn.to === sourceId))
+        .map(conn => ({
+            pipeId: conn.pipeId,
+            from: conn.from,
+            to: conn.to,
+            otherId: conn.from === sourceId ? conn.to : conn.from,
+            text: `${conn.pipeId} -> ${conn.from === sourceId ? conn.to : conn.from}`
+        }));
+}
+
+function getSourceTracePumpPathInfo(
+    sourceId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : []),
+    density = 1000,
+    vaporPressurePa = 0
+) {
+    if (typeof createPumpHydraulicContext !== 'function') {
+        return { status: 'Not evaluated', pumpId: '', pathText: '-', warnings: [] };
+    }
+
+    const source = model?.[sourceId];
+    const link = typeof getSourceLinkForSource === 'function' ? getSourceLinkForSource(sourceId) : null;
+    const attachedTargetId = link?.targetId || '';
+    const pumpIds = Object.keys(model || {}).filter(id => model[id]?.type === 'pump');
+    const collectedWarnings = [];
+
+    for (const pumpId of pumpIds) {
+        const context = createPumpHydraulicContext(
+            pumpId,
+            model,
+            connectionList,
+            Number.isFinite(density) ? density : 1000,
+            Number.isFinite(vaporPressurePa) ? vaporPressurePa : 0
+        );
+        const suctionPath = context?.suctionPath || {};
+        const sourceMatches = suctionPath.boundaryId === sourceId;
+        const attachedEquipmentMatches = attachedTargetId
+            && (suctionPath.boundaryId === attachedTargetId || suctionPath.boundaryAttachmentTargetId === attachedTargetId);
+        const warnings = context?.networkWarnings || suctionPath.warnings || [];
+        warnings.forEach(warning => {
+            if (warning && !collectedWarnings.includes(warning)) collectedWarnings.push(warning);
+        });
+
+        if (sourceMatches || attachedEquipmentMatches) {
+            const steps = suctionPath.steps || [];
+            const pathText = steps.length
+                ? steps.map(step => `${step.from} - ${step.pipeId} -> ${step.to}`).join(' | ')
+                : (attachedEquipmentMatches ? attachedTargetId : sourceId);
+            const semanticSource = source && isSemanticSourceAttachmentType(getSourceTypeValue(source, link, model));
+            const boundaryLabel = attachedEquipmentMatches && semanticSource
+                ? `Attached equipment ${attachedTargetId}`
+                : sourceId;
+            return {
+                status: context.isComplete ? `Valid to ${pumpId}` : `Incomplete to ${pumpId}`,
+                pumpId,
+                pathText,
+                boundaryLabel,
+                warnings
+            };
+        }
+    }
+
+    return {
+        status: attachedTargetId
+            ? 'Missing path from attached equipment to pump suction'
+            : 'Missing hydraulic path to pump suction',
+        pumpId: '',
+        pathText: '-',
+        boundaryLabel: attachedTargetId || sourceId,
+        warnings: collectedWarnings
+    };
+}
+
+function buildSourceCalculationTrace(
+    sourceId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : [])
+) {
+    const source = model?.[sourceId];
+    if (!source || source.type !== 'source') {
+        return {
+            status: 'SRC not found',
+            inputBasis: {},
+            readouts: [],
+            steps: [],
+            warnings: ['SRC object is not available in the active model.'],
+            assumptions: [],
+            references: []
+        };
+    }
+
+    const props = source.props || {};
+    const fluidProps = model?.FLUID?.props || {};
+    const sourceLink = typeof getSourceLinkForSource === 'function' ? getSourceLinkForSource(sourceId) : null;
+    const sourceType = getSourceTypeValue(source, sourceLink, model);
+    const isSemantic = isSemanticSourceAttachmentType(sourceType);
+    const attachedNode = sourceLink ? model?.[sourceLink.targetId] : null;
+    const boundary = resolveSourceBoundaryData(sourceId, model);
+    const effectiveFluid = typeof getFluidPropsAtSourceTemperature === 'function'
+        ? getFluidPropsAtSourceTemperature(source, fluidProps)
+        : { ...fluidProps, warnings: [] };
+    const density = Math.max(toHydraulicNumber(effectiveFluid.density, 1000), 1);
+    const viscosity = toHydraulicNumber(effectiveFluid.viscosity, NaN);
+    const vaporPressure = toHydraulicNumber(effectiveFluid.vaporPressure, NaN);
+    const temperature = toHydraulicNumber(effectiveFluid.temp ?? props.temp ?? fluidProps.temp, NaN);
+    const pressureNode = boundary?.isInherited && boundary.attachedEquipment ? boundary.attachedEquipment : source;
+    const pressureInputBasis = typeof getNodePressureInputBasis === 'function'
+        ? getNodePressureInputBasis(pressureNode)
+        : (pressureNode?.props?.pressureInputBasis || 'Absolute');
+    const pressureInput = toHydraulicNumber(pressureNode?.props?.pressure, 0);
+    const pressureInputUnit = typeof getPressureInputUnit === 'function'
+        ? getPressureInputUnit(pressureInputBasis)
+        : (pressureInputBasis === 'Gauge' ? 'bar g' : 'bar a');
+    const absolutePressure = boundary?.pressureAbsBar;
+    const pressureHead = Number.isFinite(absolutePressure)
+        ? pressureBarToHead(absolutePressure, density)
+        : null;
+    const flowMode = props.flowInputMode || 'Mass Flow';
+    const massFlow = toHydraulicNumber(props.massFlow, NaN);
+    const volumetricFlow = toHydraulicNumber(props.flow, NaN);
+    const calculatedFlow = flowMode === 'Mass Flow' && Number.isFinite(massFlow)
+        ? massFlow / density
+        : volumetricFlow;
+    const calculatedMassFlow = flowMode === 'Volumetric Flow' && Number.isFinite(volumetricFlow)
+        ? volumetricFlow * density
+        : massFlow;
+    const hydraulicConnections = getSourceTraceHydraulicConnections(sourceId, model, connectionList);
+    const firstHydraulicConnection = hydraulicConnections[0] || null;
+    const velocityHead = sourceType === 'External Header / Pipe Tie-in'
+        && (props.pressureEnergyBasis || 'Static Pressure') === 'Static Pressure'
+        && firstHydraulicConnection
+        && Number.isFinite(calculatedFlow)
+            ? getPipeVelocityHead(firstHydraulicConnection.pipeId, calculatedFlow, model, 'inlet')
+            : 0;
+    const totalSourceHead = Number.isFinite(pressureHead) && Number.isFinite(boundary?.elevation)
+        ? pressureHead + boundary.elevation + velocityHead
+        : null;
+    const pumpPath = getSourceTracePumpPathInfo(sourceId, model, connectionList, density, toHydraulicNumber(vaporPressure, 0) * 100000);
+    const warnings = [
+        ...(boundary?.warnings || []),
+        ...(effectiveFluid?.warnings || []),
+        ...(pumpPath.warnings || [])
+    ].filter(Boolean);
+
+    if (isSemantic && sourceLink && pumpPath.status.startsWith('Missing')) {
+        warnings.push(`${sourceId} is attached to ${sourceLink.targetId}, but no hydraulic path exists from the equipment outlet to the pump suction. Add pipe/hydraulic components to calculate flow and pressure loss.`);
+    }
+    if (!isSemantic && hydraulicConnections.length === 0) {
+        warnings.push(`${sourceType} requires a solid hydraulic pipe/component from the SRC port before flow and pressure loss can be calculated.`);
+    }
+
+    const role = isSemantic ? 'Semantic attachment boundary' : 'Hydraulic boundary / tie-in';
+    const connectionStyle = isSemantic ? 'Dashed attachment, not hydraulic traversal' : 'Solid hydraulic connection required';
+    const steps = [
+        createSourceTraceStep(
+            'Source role',
+            'SRC role = sourceType rule',
+            `${sourceType} -> ${connectionStyle}`,
+            role,
+            '',
+            'SRC boundary model: semantic attachment edges are excluded from hydraulic graph traversal'
+        )
+    ];
+
+    if (pressureInputBasis === 'Gauge') {
+        const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
+        steps.push(createSourceTraceStep(
+            'Absolute pressure',
+            'Pabs = Pgauge + Patm',
+            `${formatSourceTraceNumber(pressureInput)} + ${formatSourceTraceNumber(atm, 5)} = ${formatSourceTraceNumber(absolutePressure)} bar a`,
+            roundSourceTraceNumber(absolutePressure, 6),
+            'bar a',
+            'NIST Guide to the SI Appendix B: 1 standard atmosphere = 101325 Pa = 1.01325 bar'
+        ));
+    } else {
+        steps.push(createSourceTraceStep(
+            'Absolute pressure',
+            'Pabs = Pabsolute input',
+            `${formatSourceTraceNumber(pressureInput)} ${pressureInputUnit}`,
+            roundSourceTraceNumber(absolutePressure, 6),
+            'bar a',
+            'Pressure basis conversion'
+        ));
+    }
+
+    if (boundary?.isInherited && attachedNode) {
+        const baseElevation = toHydraulicNumber(attachedNode.props?.elevation, 0);
+        const liquidLevel = toHydraulicNumber(attachedNode.props?.liquidLevel, 0);
+        steps.push(createSourceTraceStep(
+            'Source elevation',
+            'z_source = z_tank base + liquid level',
+            `${formatSourceTraceNumber(baseElevation)} + ${formatSourceTraceNumber(liquidLevel)} = ${formatSourceTraceNumber(boundary.elevation)} m`,
+            roundSourceTraceNumber(boundary.elevation, 3),
+            'm',
+            'Tank/vessel liquid level elevation for reservoir/vessel source head'
+        ));
+    } else {
+        steps.push(createSourceTraceStep(
+            'Source elevation',
+            'z_source = manual SRC elevation',
+            `${formatSourceTraceNumber(props.elevation)} m`,
+            roundSourceTraceNumber(boundary?.elevation, 3),
+            'm',
+            'Manual SRC boundary elevation'
+        ));
+    }
+
+    steps.push(createSourceTraceStep(
+        'Pressure head',
+        'Hp = Pabs x 100000 / (rho x g)',
+        `${formatSourceTraceNumber(absolutePressure, 6)} x 100000 / (${formatSourceTraceNumber(density)} x ${formatSourceTraceNumber(getHydraulicGravity())}) = ${formatSourceTraceNumber(pressureHead)} m`,
+        roundSourceTraceNumber(pressureHead, 3),
+        'm',
+        'Pressure-to-head conversion'
+    ));
+
+    if (flowMode === 'Mass Flow') {
+        steps.push(createSourceTraceStep(
+            'Flow conversion',
+            'Q = massFlow / density',
+            `${formatSourceTraceNumber(massFlow)} / ${formatSourceTraceNumber(density)} = ${formatSourceTraceNumber(calculatedFlow)} m3/h`,
+            roundSourceTraceNumber(calculatedFlow, 3),
+            'm3/h',
+            'Mass-flow to volumetric-flow conversion using effective SRC density'
+        ));
+    } else if (flowMode === 'Volumetric Flow') {
+        steps.push(createSourceTraceStep(
+            'Mass flow conversion',
+            'massFlow = Q x density',
+            `${formatSourceTraceNumber(volumetricFlow)} x ${formatSourceTraceNumber(density)} = ${formatSourceTraceNumber(calculatedMassFlow)} kg/h`,
+            roundSourceTraceNumber(calculatedMassFlow, 3),
+            'kg/h',
+            'Volumetric-flow to mass-flow conversion using effective SRC density'
+        ));
+    } else {
+        steps.push(createSourceTraceStep(
+            'Flow basis',
+            'Flow = solved from network',
+            'No fixed SRC flow is imposed',
+            'Solved from network',
+            '',
+            'Hydraulic solver flow mode'
+        ));
+    }
+
+    if (sourceType === 'External Header / Pipe Tie-in') {
+        steps.push(createSourceTraceStep(
+            'Source velocity head',
+            props.pressureEnergyBasis === 'Total / Stagnation Pressure'
+                ? 'Hvel = 0 when pressure input is total/stagnation'
+                : 'Hvel = v^2 / (2g) for static pressure tie-in',
+            props.pressureEnergyBasis === 'Total / Stagnation Pressure'
+                ? 'Total/stagnation pressure already includes velocity head'
+                : `${firstHydraulicConnection?.pipeId || 'No hydraulic pipe'} inlet velocity head = ${formatSourceTraceNumber(velocityHead)} m`,
+            roundSourceTraceNumber(velocityHead, 3),
+            'm',
+            'Bernoulli total head basis for external pipe tie-in'
+        ));
+    }
+
+    steps.push(createSourceTraceStep(
+        'Source hydraulic head',
+        sourceType === 'External Header / Pipe Tie-in' && (props.pressureEnergyBasis || 'Static Pressure') === 'Static Pressure'
+            ? 'Hsource = Hp + z_source + Hvel'
+            : 'Hsource = Hp + z_source',
+        `${formatSourceTraceNumber(pressureHead)} + ${formatSourceTraceNumber(boundary?.elevation)} + ${formatSourceTraceNumber(velocityHead)} = ${formatSourceTraceNumber(totalSourceHead)} m`,
+        roundSourceTraceNumber(totalSourceHead, 3),
+        'm',
+        'Hydraulic energy head used by source boundary calculations'
+    ));
+
+    steps.push(createSourceTraceStep(
+        'Hydraulic traversal',
+        isSemantic ? 'Dashed attachment is excluded from hydraulic graph' : 'Hydraulic graph uses solid pipe/component edges',
+        isSemantic
+            ? `${sourceId} dashed-attached to ${sourceLink?.targetId || '-'}; pump path starts from attached equipment outlet pipe`
+            : hydraulicConnections.map(item => item.text).join(', ') || 'No solid hydraulic pipe from SRC',
+        pumpPath.status,
+        '',
+        'Hydraulic graph traversal rule'
+    ));
+
+    const readouts = [
+        { label: 'Boundary Pressure Input', value: pressureInput, unit: pressureInputUnit, key: 'source-trace-pressure-input' },
+        { label: 'Calculated Abs. Pressure', value: absolutePressure, unit: 'bar a', key: 'source-absolute-pressure' },
+        { label: 'Source Elevation', value: boundary?.elevation, unit: 'm', key: 'source-effective-elevation' },
+        { label: 'Pressure Head', value: pressureHead, unit: 'm', key: 'source-trace-pressure-head' },
+        { label: 'Velocity Head', value: velocityHead, unit: 'm', key: 'source-trace-velocity-head' },
+        { label: 'Source Hydraulic Head', value: totalSourceHead, unit: 'm', key: 'source-trace-hydraulic-head' },
+        { label: 'Mass Flow', value: calculatedMassFlow, unit: 'kg/h', key: 'source-mass-flow' },
+        { label: 'Volumetric Flow', value: calculatedFlow, unit: 'm3/h', key: 'source-flow' },
+        { label: 'Temperature', value: temperature, unit: 'deg C', key: 'source-temperature' },
+        { label: 'Density Used', value: density, unit: 'kg/m3', key: 'source-fluid-density' },
+        { label: 'Kinematic Viscosity', value: viscosity, unit: 'cSt', key: 'source-fluid-viscosity' },
+        { label: 'Vapor Pressure', value: vaporPressure, unit: 'bar a', key: 'source-fluid-vapor-pressure' }
+    ];
+    const dependencyChain = [
+        'Source Type -> semantic dashed attachment or solid hydraulic boundary rule.',
+        'Boundary Data Source -> manual SRC pressure/elevation or inherited tank/vessel pressure and liquid level elevation.',
+        'Pressure Basis -> absolute source pressure; gauge inputs add standard atmosphere.',
+        'Absolute pressure + density -> pressure head.',
+        'Source elevation + pressure head + optional tie-in velocity head -> source hydraulic head.',
+        'Temperature Mode -> effective Fluid Basis density, viscosity, and vapor pressure at SRC conditions.',
+        'Density + mass/volume flow input -> converted volumetric or mass flow.',
+        'Source Type + connection style -> hydraulic traversal eligibility; dashed SRC attachment is excluded from hydraulic path calculation.',
+        'Vapor pressure and source hydraulic head feed pump NPSHA through the pump calculation trace.'
+    ];
+
+    return {
+        status: warnings.length ? 'Review' : 'OK',
+        inputBasis: {
+            sourceId,
+            sourceType,
+            role,
+            connectionStyle,
+            boundaryDataSource: boundary?.boundaryDataSource || props.boundaryDataSource || 'Manual',
+            attachedEquipment: boundary?.attachedEquipmentId || sourceLink?.targetId || '-',
+            pressureInputBasis,
+            pressureEnergyBasis: props.pressureEnergyBasis || 'Static Pressure',
+            temperatureMode: props.temperatureMode || 'Use Fluid Basis',
+            flowInputMode: flowMode,
+            unitStandard: typeof getUnitStandard === 'function' ? getUnitStandard() : 'Internal metric engineering units',
+            hydraulicPipes: hydraulicConnections.map(item => item.text),
+            pumpPathStatus: pumpPath.status,
+            pumpPath: pumpPath.pathText
+        },
+        dependencyChain,
+        boundary: {
+            pressureInput,
+            pressureInputUnit,
+            absolutePressureBar: roundSourceTraceNumber(absolutePressure, 6),
+            elevation: roundSourceTraceNumber(boundary?.elevation, 3),
+            pressureHead: roundSourceTraceNumber(pressureHead, 3),
+            velocityHead: roundSourceTraceNumber(velocityHead, 3),
+            totalSourceHead: roundSourceTraceNumber(totalSourceHead, 3)
+        },
+        readouts,
+        steps,
+        warnings: [...new Set(warnings)],
+        assumptions: [
+            'SRC is a hydraulic boundary definition, not a pipe or pressure-loss element.',
+            'Dashed SRC attachment does not create hydraulic traversal or pressure drop.',
+            'Open tank/reservoir surface velocity head is neglected unless the SRC is modeled as an External Header static-pressure tie-in.'
+        ],
+        references: [
+            'pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf: NPSHA terms, vapor pressure head, suction velocity head, suction loss, and datum concept.',
+            'pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf: pressure head, Bernoulli/energy balance, specific weight, and head-loss fundamentals.',
+            'pdf_ref/ref2-introduction-fluid-mechanics.pdf: Bernoulli equation and incompressible steady-flow energy balance.',
+            'pdf_ref/ref3-cavitations_and_centrifugal_pump_book_edward.pdf: cavitation/NPSH context for centrifugal pump suction.',
+            'NIST Guide to the SI Appendix B: 1 standard atmosphere = 101325 Pa exactly; NASA Glenn Bernoulli page: static pressure plus dynamic pressure forms total pressure for the external-header pressure basis.',
+            'Flow conversion uses effective SRC density from active Fluid Basis or custom SRC temperature calculation.'
+        ]
+    };
+}
+
 function getSourceVelocityHeadForBoundary(source, flowRateM3H, path, model) {
     const sourceId = Object.keys(model || {}).find(nodeId => model[nodeId] === source) || source?.name;
     const sourceType = getSourceTypeValue(source, getSourceLinkForSource(sourceId), model);
@@ -366,7 +748,7 @@ function getBoundaryAbsolutePressureWarnings(node, label) {
             ? getNodeAbsolutePressureBar(node)
             : toHydraulicNumber(node.props.pressure, NaN));
     if (Number.isFinite(absolutePressure) && absolutePressure <= 0) {
-        return [`${label} pressure is 0 bar a/vacuum absolute; use 0 bar g or 1.013 bar a for atmospheric service.`];
+        return [`${label} pressure is 0 bar a/vacuum absolute; use 0 bar g or 1.01325 bar a for atmospheric service.`];
     }
     return [];
 }
@@ -393,22 +775,34 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
         isUnsupported: !!overrides.isUnsupported,
         isBranched: !!overrides.isBranched
     });
+    const resolveUpstreamBoundaryAtNode = (nodeId) => {
+        const node = model[nodeId];
+        if (isStorageBoundaryNode(node)) {
+            boundaryId = nodeId;
+            boundaryAttachmentTargetId = nodeId;
+            return finalize();
+        }
+
+        const attachedSourceIds = getAttachedSourceBoundaryIds(nodeId, model) || [];
+        if (attachedSourceIds.length > 1) {
+            return finalize({
+                isUnsupported: true,
+                isBranched: true,
+                warnings: [`Multiple SRC boundaries are attached to ${nodeId}; multi-source suction networks require a nodal solver.`]
+            });
+        }
+        if (attachedSourceIds.length === 1) {
+            boundaryId = attachedSourceIds[0];
+            boundaryAttachmentTargetId = nodeId;
+            return finalize();
+        }
+        return null;
+    };
 
     for (let stepCount = 0; stepCount < 80; stepCount++) {
         if (reverseSearch && currentId !== startNodeId) {
-            const attachedSourceIds = getAttachedSourceBoundaryIds(currentId, model) || [];
-            if (attachedSourceIds.length > 1) {
-                return finalize({
-                    isUnsupported: true,
-                    isBranched: true,
-                    warnings: [`Multiple SRC boundaries are attached to ${currentId}; multi-source suction networks require a nodal solver.`]
-                });
-            }
-            if (attachedSourceIds.length === 1) {
-                boundaryId = attachedSourceIds[0];
-                boundaryAttachmentTargetId = currentId;
-                return finalize();
-            }
+            const boundary = resolveUpstreamBoundaryAtNode(currentId);
+            if (boundary) return boundary;
         }
 
         const candidates = hydraulicConnections.filter(conn => (
@@ -448,19 +842,8 @@ function traceHydraulicPath(startNodeId, direction, model, connectionList) {
         if (!nextNode) break;
 
         if (reverseSearch) {
-            const attachedSourceIds = getAttachedSourceBoundaryIds(nextId, model) || [];
-            if (attachedSourceIds.length > 1) {
-                return finalize({
-                    isUnsupported: true,
-                    isBranched: true,
-                    warnings: [`Multiple SRC boundaries are attached to ${nextId}; multi-source suction networks require a nodal solver.`]
-                });
-            }
-            if (attachedSourceIds.length === 1) {
-                boundaryId = attachedSourceIds[0];
-                boundaryAttachmentTargetId = nextId;
-                return finalize();
-            }
+            const boundary = resolveUpstreamBoundaryAtNode(nextId);
+            if (boundary) return boundary;
         }
 
         if (isHydraulicBoundaryNode(nextNode, direction)) {
@@ -805,6 +1188,25 @@ function getPumpElevationWarnings(pump) {
     return [];
 }
 
+function getHydraulicPathEquipmentWarnings(path, terminalNodeId, model) {
+    if (!path || !Array.isArray(path.steps)) return [];
+    const warnings = [];
+    const addNodeWarnings = (nodeId) => {
+        const nodeWarnings = model?.[nodeId]?.results?.warnings || [];
+        nodeWarnings.forEach(warning => {
+            if (warning && !warnings.includes(warning)) warnings.push(warning);
+        });
+    };
+
+    const entryNodeId = getHydraulicPathEntryEquipmentNodeId(path, terminalNodeId, model);
+    if (entryNodeId) addNodeWarnings(entryNodeId);
+    path.steps.forEach(step => {
+        if (step.to && step.to !== terminalNodeId) addNodeWarnings(step.to);
+    });
+
+    return warnings;
+}
+
 function createPumpHydraulicContext(pumpId, model, connectionList, density, vaporPressurePa) {
     const suctionPath = traceHydraulicPath(pumpId, 'upstream', model, connectionList);
     const dischargePath = traceHydraulicPath(pumpId, 'downstream', model, connectionList);
@@ -822,7 +1224,9 @@ function createPumpHydraulicContext(pumpId, model, connectionList, density, vapo
         ...getPumpElevationWarnings(model[pumpId]),
         ...(fluidProps.warnings || []),
         ...getBoundaryAbsolutePressureWarnings(suctionBoundary, suctionPath.boundaryId || 'Suction boundary'),
-        ...getBoundaryAbsolutePressureWarnings(dischargeBoundary, dischargePath.boundaryId || 'Discharge boundary')
+        ...getBoundaryAbsolutePressureWarnings(dischargeBoundary, dischargePath.boundaryId || 'Discharge boundary'),
+        ...getHydraulicPathEquipmentWarnings(suctionPath, pumpId, model),
+        ...getHydraulicPathEquipmentWarnings(dischargePath, dischargePath.boundaryId, model)
     ];
     const isSupported = !suctionPath.isUnsupported && !dischargePath.isUnsupported;
 
@@ -903,6 +1307,12 @@ function calculatePumpHydraulicSnapshot(context, flowRateM3H, pumpHead) {
     const suctionHeadAtPump = suctionBoundaryHead - suctionLoss;
     const dischargeHeadAtPump = suctionHeadAtPump + pumpHead;
     const vaporPressureHead = context.vaporPressurePa / (context.density * getHydraulicGravity());
+    const sourceVelocityHead = getSourceVelocityHeadForBoundary(
+        context.suctionBoundary,
+        flowRateM3H,
+        context.suctionPath,
+        globalModel
+    );
     const suctionTerminalStep = context.suctionPath.steps[context.suctionPath.steps.length - 1];
     const suctionVelocityHead = suctionTerminalStep
         ? getPipeVelocityHead(suctionTerminalStep.pipeId, flowRateM3H, globalModel, 'outlet')
@@ -919,6 +1329,7 @@ function calculatePumpHydraulicSnapshot(context, flowRateM3H, pumpHead) {
         dischargeHeadAtPump,
         pumpElevation,
         vaporPressureHead,
+        sourceVelocityHead,
         suctionVelocityHead,
         npsha: suctionHeadAtPump - pumpElevation - vaporPressureHead,
         suctionPressureBar: pressureHeadToBar(suctionHeadAtPump - pumpElevation, context.density),
@@ -960,6 +1371,12 @@ function calculatePumpFlowDemandSnapshot(context, flowRateM3H, pumpHead) {
     const dischargeHeadAtPump = suctionHeadAtPump + pumpHead;
     const dischargeBoundaryHead = dischargeHeadAtPump - dischargeLoss;
     const vaporPressureHead = context.vaporPressurePa / (context.density * getHydraulicGravity());
+    const sourceVelocityHead = getSourceVelocityHeadForBoundary(
+        context.suctionBoundary,
+        flowRateM3H,
+        context.suctionPath,
+        globalModel
+    );
     const suctionTerminalStep = context.suctionPath.steps[context.suctionPath.steps.length - 1];
     const suctionVelocityHead = suctionTerminalStep
         ? getPipeVelocityHead(suctionTerminalStep.pipeId, flowRateM3H, globalModel, 'outlet')
@@ -979,6 +1396,7 @@ function calculatePumpFlowDemandSnapshot(context, flowRateM3H, pumpHead) {
         terminalVelocityHead,
         pumpElevation,
         vaporPressureHead,
+        sourceVelocityHead,
         suctionVelocityHead,
         sinkStaticPressureBar,
         sinkStagnationPressureBar,
@@ -993,6 +1411,10 @@ function resetHydraulicPipeResults(model) {
     Object.keys(model).forEach(nodeId => {
         const node = model[nodeId];
         if (!node || node.type !== 'pipe') return;
+        const connectionList = typeof connections !== 'undefined' ? connections : [];
+        const compatibilityWarnings = typeof getPipeValveCompatibilityWarnings === 'function'
+            ? getPipeValveCompatibilityWarnings(nodeId, model, connectionList)
+            : [];
         node.results = {
             flow: 0,
             pressure: null,
@@ -1006,7 +1428,7 @@ function resetHydraulicPipeResults(model) {
             highPointLocationPercent: null,
             vaporPressure: null,
             segmentProfiles: [],
-            warnings: []
+            warnings: compatibilityWarnings
         };
     });
 
@@ -1187,6 +1609,12 @@ function setPipeHydraulicResult(model, step, flowRateM3H, inletHead, outletHead,
             warnings.push(`Pipe high point pressure at ${profile.name} is at or below vapor pressure; vapor margin ${profile.highPointVaporMargin.toFixed(3)} bar.`);
         }
     });
+    if (typeof getPipeValveCompatibilityWarnings === 'function') {
+        const connectionList = typeof connections !== 'undefined' ? connections : [];
+        getPipeValveCompatibilityWarnings(step.pipeId, model, connectionList).forEach(warning => {
+            if (warning && !warnings.includes(warning)) warnings.push(warning);
+        });
+    }
 
     const result = {
         flow: Number(flowRateM3H.toFixed(3)),

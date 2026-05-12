@@ -342,18 +342,31 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
     const minorLoss = sumPumpTraceLoss(lossEntries, 'minorLoss');
     const totalLoss = toPumpNumber(hydraulicSnapshot?.suctionLoss, majorLoss + minorLoss);
     const vaporPressureHead = toPumpNumber(hydraulicSnapshot?.vaporPressureHead, NaN);
+    const sourceVelocityHead = toPumpNumber(hydraulicSnapshot?.sourceVelocityHead, 0);
     const npsha = toPumpNumber(hydraulicSnapshot?.npsha, NaN);
     const margin = npshEvaluation?.margin ?? (Number.isFinite(npsha) && Number.isFinite(npshr) ? npsha - npshr : null);
     const ratio = npshEvaluation?.ratio ?? (Number.isFinite(npsha) && Number.isFinite(npshr) && npshr > 0 ? npsha / npshr : null);
     const npshrSource = getPumpNpshrSourceLabel(performanceModel);
     const pathSequence = getPumpNpshTracePathSequence(hydraulicContext);
-    const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.013;
+    const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
     const pressureFormula = pressureInputBasis === 'Gauge'
         ? 'Pabs = Pgauge + Patm'
         : 'Pabs = Pabs input';
     const pressureSubstitution = pressureInputBasis === 'Gauge'
         ? `${formatPumpTraceNumber(boundaryPressureInput)} + ${formatPumpTraceNumber(atm)} = ${formatPumpTraceNumber(boundaryPressureAbs)} bar a`
         : `${formatPumpTraceNumber(boundaryPressureInput)} = ${formatPumpTraceNumber(boundaryPressureAbs)} bar a`;
+    const sourceType = sourceBoundary?.sourceType || boundary?.props?.sourceType || boundary?.type || '-';
+    const pressureEnergyBasis = sourceBoundary?.pressureEnergyBasis || boundary?.props?.pressureEnergyBasis || '-';
+    const usesStaticTieInVelocity = sourceType === 'External Header / Pipe Tie-in'
+        && pressureEnergyBasis === 'Static Pressure'
+        && Math.abs(sourceVelocityHead) > 1e-9;
+    const velocityHeadReference = usesStaticTieInVelocity
+        ? 'External header static pressure basis adds inlet velocity head once to form total hydraulic head'
+        : 'Reservoir surface velocity is neglected, or total/stagnation pressure already includes velocity head';
+    const velocityHeadFormula = usesStaticTieInVelocity ? 'Hvel = v^2 / (2g)' : 'Hvel = 0';
+    const velocityHeadSubstitution = usesStaticTieInVelocity
+        ? `Inlet pipe velocity head = ${formatPumpTraceNumber(sourceVelocityHead)} m`
+        : `${formatPumpTraceNumber(sourceVelocityHead)} m`;
 
     const limitations = [
         'Hydraulic trace follows one supported series suction path per pump; branched networks require a nodal solver.'
@@ -384,6 +397,8 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
             pressureInputUnit,
             absolutePressureBar: roundPumpTraceNumber(boundaryPressureAbs, 3),
             pressureHead: roundPumpTraceNumber(pressureHead, 3),
+            velocityHead: roundPumpTraceNumber(sourceVelocityHead, 3),
+            totalHead: roundPumpTraceNumber(pressureHead + boundaryElevation + sourceVelocityHead, 3),
             elevation: roundPumpTraceNumber(boundaryElevation, 3),
             boundaryDataSource: sourceBoundary?.boundaryDataSource || 'Manual',
             attachedEquipment: sourceBoundary?.attachedEquipmentId || '-',
@@ -436,6 +451,14 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
                 unit: 'm'
             },
             {
+                title: 'Source Velocity Head',
+                reference: velocityHeadReference,
+                formula: velocityHeadFormula,
+                substitution: velocityHeadSubstitution,
+                result: roundPumpTraceNumber(sourceVelocityHead, 3),
+                unit: 'm'
+            },
+            {
                 title: 'Suction Loss',
                 reference: 'Darcy-Weisbach major loss plus minor loss coefficient K',
                 formula: 'HL = pipe major + fitting/valve minor',
@@ -454,8 +477,8 @@ function buildPumpNpshCalculationTrace(pump, hydraulicContext, hydraulicSnapshot
             {
                 title: 'NPSHa',
                 reference: 'NPSH available definition from suction energy balance',
-                formula: 'NPSHa = Hp + z_source - z_pump - HL - Hv',
-                substitution: `${formatPumpTraceNumber(pressureHead)} + ${formatPumpTraceNumber(boundaryElevation)} - ${formatPumpTraceNumber(pumpElevation)} - ${formatPumpTraceNumber(totalLoss)} - ${formatPumpTraceNumber(vaporPressureHead)} = ${formatPumpTraceNumber(npsha)} m`,
+                formula: 'NPSHa = Hp + z_source + Hvel - z_pump - HL - Hv',
+                substitution: `${formatPumpTraceNumber(pressureHead)} + ${formatPumpTraceNumber(boundaryElevation)} + ${formatPumpTraceNumber(sourceVelocityHead)} - ${formatPumpTraceNumber(pumpElevation)} - ${formatPumpTraceNumber(totalLoss)} - ${formatPumpTraceNumber(vaporPressureHead)} = ${formatPumpTraceNumber(npsha)} m`,
                 result: roundPumpTraceNumber(npsha, 3),
                 unit: 'm'
             },
@@ -667,8 +690,8 @@ function calculatePressureBoundaryHeadForOptimization(node, density, flowRateM3H
         ? sourceBoundary.pressureAbsBar
         : (typeof getNodeAbsolutePressureBar === 'function'
             ? getNodeAbsolutePressureBar(node)
-            : toPumpNumber(node.props.pressure, 1.013));
-    const pressureHead = pressureBarToHead(Number.isFinite(pressure) ? pressure : 1.013, density);
+            : toPumpNumber(node.props.pressure, 1.01325));
+    const pressureHead = pressureBarToHead(Number.isFinite(pressure) ? pressure : 1.01325, density);
     let boundaryHead = pressureHead + (sourceBoundary ? sourceBoundary.elevation : getNodeHydraulicElevation(node));
 
     if (node.type === 'sink' && node.props.pressureBasis === 'Static') {

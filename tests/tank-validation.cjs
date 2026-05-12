@@ -124,6 +124,29 @@ const vacuumVentHigh = evaluateTank(defaultTankProps({
 }));
 assert(warningIncludes(vacuumVentHigh, 'above design vacuum'), 'Expected vacuum vent over design vacuum warning');
 
+const operatingVacuumHigh = evaluateTank(defaultTankProps({
+    pressure: -0.02,
+    tankDesignPressure: 50,
+    pressureVentSet: 25,
+    designVacuum: 10,
+    vacuumVentSet: 5,
+    emergencyVentProvided: 'Provided'
+}));
+assert(warningIncludes(operatingVacuumHigh, 'normal operating vacuum'), 'Expected vacuum vent versus operating vacuum warning');
+assert(warningIncludes(operatingVacuumHigh, 'Operating vapor space vacuum is above design vacuum'), 'Expected operating vacuum over design vacuum warning');
+
+const outletAboveLiquid = evaluateTank(defaultTankProps({
+    liquidLevel: 0.5,
+    lll: 0.2,
+    outletNozzleElevation: 7,
+    tankDesignPressure: 50,
+    pressureVentSet: 25,
+    designVacuum: 10,
+    vacuumVentSet: 5,
+    emergencyVentProvided: 'Provided'
+}));
+assert(warningIncludes(outletAboveLiquid, 'Outlet nozzle elevation is above current liquid level'), 'Expected outlet nozzle above liquid level warning');
+
 const migrated = normalizeProps({
     pressureInputBasis: 'Gauge',
     pressure: 0,
@@ -171,6 +194,8 @@ console.log(JSON.stringify({
         tankDesignPressure: migrated.tankDesignPressure,
         pressureVentSet: migrated.pressureVentSet
     },
+    operatingVacuumWarnings: operatingVacuumHigh.warnings,
+    outletAboveLiquidWarnings: outletAboveLiquid.warnings,
     presets: {
         api650DesignPressure: api650Preset.tankDesignPressure,
         api620DesignPressure: api620Preset.tankDesignPressure

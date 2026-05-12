@@ -35,6 +35,21 @@ const SINK_ACTIVE = 'Active';
 const SINK_INACTIVE = 'Inactive';
 
 const globalModel = {
+    "SETTINGS": typeof createDefaultSimulationSettings === 'function'
+        ? createDefaultSimulationSettings()
+        : {
+            type: 'settings',
+            name: 'Simulation Settings',
+            props: {
+                unitStandard: 'Metric / European Engineering',
+                basisConfirmed: false,
+                basisDirty: false,
+                lastConfirmedFluid: '',
+                lastConfirmedTemperature: null,
+                lastConfirmedUnitStandard: 'Metric / European Engineering',
+                migratedFromLegacy: false
+            }
+        },
     "FLUID":  { 
         type: "fluid", 
         name: "Fluid Basis", 
@@ -76,7 +91,9 @@ function createDefaultResults(type) {
             inletFlow: null,
             outletFlow: null,
             netFlow: null,
+            levelTrend: '-',
             sourceFeedFlow: null,
+            sourceFeedFlows: [],
             operatingPressureAbsolute: null,
             operatingPressureGauge: null,
             operatingPressureGaugeMbar: null,
@@ -95,7 +112,8 @@ function createDefaultResults(type) {
             geometryStatus: '-',
             emergencyVentProvided: '-',
             status: '-',
-            warnings: []
+            warnings: [],
+            calculationTrace: null
         };
     }
 
@@ -246,6 +264,15 @@ function calculateSourceMassFlowFromVolumetric(flowM3H, density = getFluidBasisD
     const rho = parseFloat(density);
     if (!Number.isFinite(flow) || !Number.isFinite(rho) || rho <= 0) return 0;
     return flow * rho;
+}
+
+function getSourceEffectiveDensityForFlow(source) {
+    const baseDensity = getFluidBasisDensity();
+    if (typeof getFluidPropsAtSourceTemperature !== 'function') return baseDensity;
+
+    const fluidProps = getFluidPropsAtSourceTemperature(source, globalModel.FLUID?.props || {});
+    const density = parseFloat(fluidProps?.density);
+    return Number.isFinite(density) && density > 0 ? density : baseDensity;
 }
 
 function isSourceUsingFluidBasisTemperature(source) {
@@ -450,7 +477,7 @@ function syncSourceFlowFromInputMode(sourceId) {
     if (!source.props) source.props = {};
     if (isSourceSolvingFlowFromNetwork(source)) return;
 
-    const density = getFluidBasisDensity();
+    const density = getSourceEffectiveDensityForFlow(source);
     if (isSourceUsingMassFlow(source)) {
         source.props.flow = calculateSourceVolumetricFlowFromMass(source.props.massFlow, density);
     } else {
@@ -491,7 +518,8 @@ function normalizeSourceProps(source) {
         source.props.flowInputMode = SOURCE_FLOW_MODE_MASS;
     }
     if (source.props.pressure === undefined) {
-        source.props.pressure = source.props.pressureInputBasis === PRESSURE_INPUT_BASIS_GAUGE ? 0 : 1.013;
+        const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
+        source.props.pressure = source.props.pressureInputBasis === PRESSURE_INPUT_BASIS_GAUGE ? 0 : atm;
     }
     if (source.props.elevation === undefined || source.props.elevation === null || source.props.elevation === '') {
         source.props.elevation = 0;
@@ -520,7 +548,8 @@ function normalizeSinkProps(sink) {
     }
     if (!sink.props.pressureBasis) sink.props.pressureBasis = 'Static';
     if (sink.props.pressure === undefined || sink.props.pressure === null || sink.props.pressure === '') {
-        sink.props.pressure = sink.props.pressureInputBasis === PRESSURE_INPUT_BASIS_GAUGE ? 0 : 1.013;
+        const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
+        sink.props.pressure = sink.props.pressureInputBasis === PRESSURE_INPUT_BASIS_GAUGE ? 0 : atm;
     }
     if (sink.props.elevation === undefined || sink.props.elevation === null || sink.props.elevation === '') {
         sink.props.elevation = 0;

@@ -1,5 +1,18 @@
 window.DEFAULT_SIMULATION_STATE = {
     model: {
+        SETTINGS: {
+            type: 'settings',
+            name: 'Simulation Settings',
+            props: {
+                unitStandard: 'Metric / European Engineering',
+                basisConfirmed: false,
+                basisDirty: false,
+                lastConfirmedFluid: '',
+                lastConfirmedTemperature: null,
+                lastConfirmedUnitStandard: 'Metric / European Engineering',
+                migratedFromLegacy: false
+            }
+        },
         FLUID: {
             type: 'fluid',
             name: 'Fluid Basis',

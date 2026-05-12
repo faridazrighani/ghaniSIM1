@@ -198,19 +198,19 @@ function renderTankAdvancedInventoryData(nodeId, node, tbody) {
                             <td class="prop-value" data-key="tank-fill-percent">${formatReadoutValue(node.props.fillPercent)} %</td>
                         </tr>
                         <tr>
-                            <td class="prop-label">Current Level</td>
+                            <td class="prop-label">Current Level above Base</td>
                             <td class="prop-value"><input class="prop-input-field tank-inventory-input" type="number" data-node="${escapeHtml(nodeId)}" data-key="liquidLevel" value="${escapeHtml(node.props.liquidLevel)}"> m</td>
                         </tr>
                         <tr>
-                            <td class="prop-label">High Liquid Level (HLL)</td>
+                            <td class="prop-label">HLL above Base</td>
                             <td class="prop-value"><input class="prop-input-field tank-inventory-input" type="number" data-node="${escapeHtml(nodeId)}" data-key="hll" value="${escapeHtml(node.props.hll)}"> m</td>
                         </tr>
                         <tr>
-                            <td class="prop-label">Normal Liq. Level (NLL)</td>
+                            <td class="prop-label">NLL above Base</td>
                             <td class="prop-value"><input class="prop-input-field tank-inventory-input" type="number" data-node="${escapeHtml(nodeId)}" data-key="nll" value="${escapeHtml(node.props.nll)}"> m</td>
                         </tr>
                         <tr>
-                            <td class="prop-label">Low Liquid Level (LLL)</td>
+                            <td class="prop-label">LLL above Base</td>
                             <td class="prop-value"><input class="prop-input-field tank-inventory-input" type="number" data-node="${escapeHtml(nodeId)}" data-key="lll" value="${escapeHtml(node.props.lll)}"> m</td>
                         </tr>
                         <tr>
@@ -319,6 +319,1283 @@ function renderSinkReadoutCards(node, tbody) {
     tbody.appendChild(tr);
 }
 
+function renderTankSourceFeedFlowBreakdown(sourceFeedFlows = []) {
+    if (!Array.isArray(sourceFeedFlows) || sourceFeedFlows.length === 0) {
+        return '<div class="tank-source-feed-empty">-</div>';
+    }
+
+    return sourceFeedFlows.map(row => `
+        <div class="tank-source-feed-row">
+            <span>${escapeHtml(row.sourceId || '-')}</span>
+            <strong>${formatReadoutValue(row.flow)} m3/h</strong>
+        </div>
+    `).join('');
+}
+
+function formatTankTraceDisplayValue(value, unit = '') {
+    if (value === null || value === undefined || value === '') return '-';
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderTankTraceMetric(label, value, unit = '') {
+    return `
+        <div class="pipe-trace-metric tank-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(formatTankTraceDisplayValue(value, unit))}</strong>
+        </div>
+    `;
+}
+
+function renderTankTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric tank-trace-metric tank-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderTankTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No tank trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatTankTraceDisplayValue(step.result, step.unit || ''))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderTankTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list tank-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderTankTraceSourceFeedList(sourceFeedFlows = []) {
+    if (!Array.isArray(sourceFeedFlows) || sourceFeedFlows.length === 0) {
+        return '<div class="pipe-trace-empty">No attached SRC feed flow rows.</div>';
+    }
+    return `
+        <ul class="pipe-trace-list tank-trace-list">
+            ${sourceFeedFlows.map(row => `
+                <li>${escapeHtml(row.sourceId || 'SRC')}: ${escapeHtml(formatTankTraceDisplayValue(row.flow, 'm3/h'))} (${escapeHtml(row.sourceType || '-')})</li>
+            `).join('')}
+        </ul>
+    `;
+}
+
+function renderTankCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">Tank calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const geometry = trace.geometry || {};
+    const inventory = trace.inventory || {};
+    const flow = trace.flowBalance || {};
+    const pressure = trace.pressureVenting || {};
+    const warnings = trace.warnings || [];
+
+    return `
+        <div class="pipe-trace-status ${warnings.length ? 'pipe-trace-status-unsolved' : 'pipe-trace-status-solved'}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderTankTraceTextMetric('Tank Code Basis', input.codeBasis)}
+                ${renderTankTraceTextMetric('Model Basis', input.modelBasis)}
+                ${renderTankTraceMetric('Pressure Input', input.pressureInput, input.pressureInputUnit || '')}
+                ${renderTankTraceTextMetric('Pressure Basis', input.pressureInputBasis)}
+                ${renderTankTraceTextMetric('Emergency Vent', input.emergencyVent)}
+            </div>
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Geometry & Inventory</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderTankTraceMetric('Diameter', geometry.diameter, 'm')}
+                ${renderTankTraceMetric('Tank Height', geometry.tankHeight, 'm')}
+                ${renderTankTraceMetric('Area', geometry.crossSectionArea, 'm2')}
+                ${renderTankTraceMetric('Base Elevation', geometry.baseElevation, 'm')}
+                ${renderTankTraceMetric('Top Elevation', geometry.topElevation, 'm')}
+                ${renderTankTraceMetric('Liquid Level above Base', geometry.liquidLevel, 'm')}
+                ${renderTankTraceMetric('Liquid Surface Elev.', geometry.liquidSurfaceElevation, 'm')}
+                ${renderTankTraceMetric('Outlet Nozzle Elev.', geometry.outletNozzleElevation, 'm')}
+                ${renderTankTraceMetric('Outlet Submergence', geometry.outletSubmergence, 'm')}
+                ${renderTankTraceMetric('Liquid Volume', inventory.liquidVolume, 'm3')}
+                ${renderTankTraceMetric('Total Capacity', inventory.totalCapacity, 'm3')}
+                ${renderTankTraceMetric('Fill', inventory.fillPercent, '%')}
+            </div>
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Flow Balance</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderTankTraceTextMetric('Connected Pipes', (flow.connectedPipes || []).join(', ') || '-')}
+                ${renderTankTraceTextMetric('Connected Sources', (flow.connectedSources || []).join(', ') || '-')}
+                ${renderTankTraceMetric('Pipe Inlet Flow', flow.pipeInletFlow, 'm3/h')}
+                ${renderTankTraceMetric('Total SRC Feed Flow', flow.sourceFeedFlow, 'm3/h')}
+                ${renderTankTraceMetric('Inlet Flow', flow.inletFlow, 'm3/h')}
+                ${renderTankTraceMetric('Outlet Flow', flow.outletFlow, 'm3/h')}
+                ${renderTankTraceMetric('Net Flow', flow.netFlow, 'm3/h')}
+                ${renderTankTraceTextMetric('Level Trend', flow.levelTrend)}
+            </div>
+            <div class="pipe-trace-source-note">SRC Feed Flow Breakdown</div>
+            ${renderTankTraceSourceFeedList(flow.sourceFeedFlows)}
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Tank Pressure & Venting</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderTankTraceMetric('Operating Abs. P', pressure.operatingPressureAbsolute, 'bar a')}
+                ${renderTankTraceMetric('Operating Gauge P', pressure.operatingGaugePressureMbar, 'mbar g')}
+                ${renderTankTraceMetric('Operating Vacuum', pressure.operatingVacuumMbar, 'mbar vacuum')}
+                ${renderTankTraceMetric('Fluid Vapor P', pressure.vaporPressure, 'bar a')}
+                ${renderTankTraceMetric('Tank Design P', pressure.tankDesignPressure, 'mbar g')}
+                ${renderTankTraceMetric('Design Vacuum', pressure.designVacuum, 'mbar vacuum')}
+                ${renderTankTraceMetric('Pressure Vent Set', pressure.pressureVentSet, 'mbar g')}
+                ${renderTankTraceMetric('Vacuum Vent Set', pressure.vacuumVentSet, 'mbar vacuum')}
+                ${renderTankTraceMetric('Pressure Vent Margin', pressure.pressureVentMargin, 'mbar')}
+                ${renderTankTraceMetric('Vacuum Vent Margin', pressure.vacuumVentMargin, 'mbar')}
+                ${renderTankTraceTextMetric('Venting Basis', pressure.ventingBasis)}
+            </div>
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table tank-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderTankTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderTankTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>Academic Assumptions</h4>
+            ${renderTankTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block tank-trace-block">
+            <h4>References</h4>
+            ${renderTankTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function getTankCalculationTraceForRender(node) {
+    if (!node) return null;
+    const fluidProps = typeof globalModel !== 'undefined' ? (globalModel.FLUID?.props || {}) : {};
+    if (typeof buildTankCalculationTrace === 'function') {
+        return buildTankCalculationTrace(node, fluidProps, node.results || {});
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderTankCalculationTrace(node, tbody) {
+    const trace = getTankCalculationTraceForRender(node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell tank-trace-cell">
+            <details class="pipe-calculation-trace tank-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body tank-calculation-trace-body" data-key="tank-calculation-trace-body">
+                    ${renderTankCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function formatSeparatorTraceDisplayValue(value, unit = '', digits = 3) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, '', unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderSeparatorTraceMetric(label, value, unit = '', key = '', digits = 3) {
+    return `
+        <div class="pipe-trace-metric separator-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatSeparatorTraceDisplayValue(value, unit, digits))}</strong>
+        </div>
+    `;
+}
+
+function renderSeparatorTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric separator-trace-metric separator-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderSeparatorTraceReadouts(readouts = [], vesselLabel = 'Vessel') {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return `<div class="pipe-trace-empty">No ${escapeHtml(vesselLabel)} readout available.</div>`;
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => renderSeparatorTraceMetric(item.label, item.value, item.unit || '', item.key || '', item.digits ?? 3)).join('')}
+        </div>
+    `;
+}
+
+function renderSeparatorTraceStepRows(steps = [], vesselLabel = 'Vessel') {
+    if (!steps.length) {
+        return `<tr><td colspan="5" class="pipe-trace-empty">No ${escapeHtml(vesselLabel)} trace steps available.</td></tr>`;
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatSeparatorTraceDisplayValue(step.result, step.unit || '', step.digits ?? 3))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderSeparatorTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list separator-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderSeparatorTraceSourceFeedList(sourceFeedFlows = []) {
+    if (!Array.isArray(sourceFeedFlows) || sourceFeedFlows.length === 0) {
+        return '<div class="pipe-trace-empty">No attached SRC feed flow rows.</div>';
+    }
+    return `
+        <ul class="pipe-trace-list separator-trace-list">
+            ${sourceFeedFlows.map(row => `
+                <li>
+                    ${escapeHtml(row.sourceId || 'SRC')}:
+                    ${escapeHtml(formatSeparatorTraceDisplayValue(row.flow, 'm3/h'))}
+                    (${escapeHtml(row.sourceType || '-')}; ${escapeHtml(row.role || 'feed specification')})
+                </li>
+            `).join('')}
+        </ul>
+    `;
+}
+
+function renderSeparatorDependencyChain(items = [], vesselLabel = 'Vessel') {
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) {
+        return `<div class="pipe-trace-empty">No ${escapeHtml(vesselLabel)} dependency chain available.</div>`;
+    }
+    return `
+        <ol class="pipe-trace-list separator-trace-list separator-dependency-chain">
+            ${rows.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+    `;
+}
+
+function renderSeparatorReadoutCards(nodeId, node, tbody) {
+    const trace = getSeparatorCalculationTraceForRender(nodeId, node);
+    const flow = trace?.flowBalance || {};
+    const vesselLabel = trace?.inputBasis?.vesselLabel || 'Vessel';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td colspan="2" style="padding: 10px 12px;">
+            ${renderSeparatorTraceReadouts(trace?.readouts || [], vesselLabel)}
+            <div class="pipe-trace-source-note">SRC Feed Flow Breakdown</div>
+            ${renderSeparatorTraceSourceFeedList(flow.sourceFeedFlows)}
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function renderSeparatorStandardExample(example = {}) {
+    const vesselLabel = example.vesselLabel || 'vessel';
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${renderSeparatorTraceTextMetric('Example Basis', 'Reference starting values')}
+            ${renderSeparatorTraceTextMetric('Pressure Basis', example.pressureInputBasis || 'Gauge')}
+            ${renderSeparatorTraceMetric('Vessel Pressure', example.pressure, example.pressureInputUnit || 'bar g')}
+            ${renderSeparatorTraceMetric('Pressure Drop', example.pressureDrop, 'bar')}
+            ${renderSeparatorTraceMetric('Base Elevation', example.baseElevation, 'm')}
+            ${renderSeparatorTraceMetric('Liquid Level Offset', example.liquidLevel, 'm')}
+            ${renderSeparatorTraceMetric('Liquid Surface Elev.', example.liquidSurfaceElevation, 'm')}
+            ${renderSeparatorTraceMetric('Inlet Nozzle Elev.', example.inletNozzleElevation, 'm')}
+            ${renderSeparatorTraceMetric('Outlet Nozzle Elev.', example.outletNozzleElevation, 'm')}
+            ${renderSeparatorTraceMetric('Outlet Submergence', example.outletSubmergence, 'm')}
+            ${renderSeparatorTraceMetric('Residence Time', example.residenceTime, 'min')}
+        </div>
+        <div class="pipe-trace-source-note">
+            Example values are applied to new ${escapeHtml(vesselLabel)} objects as a starting point and remain editable. They are not a vessel/separator sizing guarantee.
+        </div>
+    `;
+}
+
+function renderSeparatorCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">Vessel calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const vesselLabel = input.vesselLabel || 'Vessel';
+    const flow = trace.flowBalance || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderSeparatorTraceTextMetric('Vessel', input.vesselId)}
+                ${renderSeparatorTraceTextMetric('Type', input.vesselType)}
+                ${renderSeparatorTraceTextMetric('Orientation', input.orientation)}
+                ${renderSeparatorTraceTextMetric('Model Basis', input.modelBasis)}
+                ${renderSeparatorTraceTextMetric('Pressure Basis', input.pressureInputBasis)}
+                ${renderSeparatorTraceMetric('Pressure Input', trace.boundary?.pressureInput, input.pressureInputUnit || '')}
+                ${renderSeparatorTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${renderSeparatorTraceTextMetric('Flow Basis', input.flowBasis)}
+                ${renderSeparatorTraceTextMetric('Connected Pipe(s)', (input.connectedPipes || []).join(', ') || '-')}
+                ${renderSeparatorTraceTextMetric('Attached SRC(s)', (input.attachedSources || []).join(', ') || '-')}
+            </div>
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Standard Example Values</h4>
+            ${renderSeparatorStandardExample(trace.standardExample || {})}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Calculated Properties / Calculation Trace</h4>
+            ${renderSeparatorTraceReadouts(trace.readouts || [], vesselLabel)}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Flow Balance</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderSeparatorTraceTextMetric('Connected Pipes', (flow.connectedPipes || []).join(', ') || '-')}
+                ${renderSeparatorTraceTextMetric('Attached SRC(s)', (flow.connectedSources || []).join(', ') || '-')}
+                ${renderSeparatorTraceMetric('Hydraulic Inlet Flow', flow.hydraulicInletFlow, 'm3/h', 'vessel-hydraulic-inlet-flow')}
+                ${renderSeparatorTraceMetric('Hydraulic Outlet Flow', flow.hydraulicOutletFlow, 'm3/h', 'vessel-hydraulic-outlet-flow')}
+                ${renderSeparatorTraceMetric('Total SRC Feed Flow', flow.sourceFeedFlow, 'm3/h', 'vessel-source-feed-flow')}
+                ${renderSeparatorTraceMetric('Inlet Flow', flow.inletFlow, 'm3/h', 'vessel-inlet-flow')}
+                ${renderSeparatorTraceMetric('Outlet Flow', flow.outletFlow, 'm3/h', 'vessel-outlet-flow')}
+                ${renderSeparatorTraceMetric('Net Flow', flow.netFlow, 'm3/h', 'vessel-net-flow')}
+                ${renderSeparatorTraceTextMetric('Level Trend', flow.levelTrend)}
+            </div>
+            <div class="pipe-trace-source-note">SRC Feed Flow Breakdown</div>
+            ${renderSeparatorTraceSourceFeedList(flow.sourceFeedFlows)}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Dependency Chain</h4>
+            ${renderSeparatorDependencyChain(trace.dependencyChain || [], vesselLabel)}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table separator-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderSeparatorTraceStepRows(trace.steps || [], vesselLabel)}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderSeparatorTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>Assumptions</h4>
+            ${renderSeparatorTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block separator-trace-block">
+            <h4>References / Method</h4>
+            ${renderSeparatorTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function getSeparatorCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildSeparatorCalculationTrace === 'function') {
+        return buildSeparatorCalculationTrace(nodeId || node, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderSeparatorCalculationTrace(nodeId, node, tbody) {
+    const trace = getSeparatorCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell separator-trace-cell">
+            <details class="pipe-calculation-trace separator-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body separator-calculation-trace-body"
+                    data-key="separator-calculation-trace-body"
+                    data-vessel-id="${escapeHtml(nodeId)}">
+                    ${renderSeparatorCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateSeparatorCalculationTraceReadout(vesselId = null) {
+    document.querySelectorAll('[data-key="separator-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = vesselId || traceBody.dataset.vesselId;
+        if (!nodeId || (vesselId && traceBody.dataset.vesselId !== vesselId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getSeparatorCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderSeparatorCalculationTraceReport(trace);
+    });
+}
+
+function updateAllSeparatorCalculationTraceReadouts() {
+    if (typeof globalModel === 'undefined') return;
+    Object.keys(globalModel).forEach(nodeId => {
+        if (['separator', 'verticalVessel'].includes(globalModel[nodeId]?.type)) {
+            if (typeof buildSeparatorCalculationTrace === 'function') {
+                if (!globalModel[nodeId].results) globalModel[nodeId].results = {};
+                globalModel[nodeId].results.calculationTrace = buildSeparatorCalculationTrace(nodeId, globalModel, connections);
+            }
+        }
+    });
+    updateSeparatorCalculationTraceReadout();
+}
+
+function formatInstrumentTraceDisplayValue(value, unit = '', digits = 3) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, '', unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderInstrumentTraceMetric(label, value, unit = '', key = '') {
+    return `
+        <div class="pipe-trace-metric instrument-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatInstrumentTraceDisplayValue(value, unit))}</strong>
+        </div>
+    `;
+}
+
+function renderInstrumentTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric instrument-trace-metric instrument-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderInstrumentTraceReadouts(readouts = []) {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return '<div class="pipe-trace-empty">No live readout available.</div>';
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => renderInstrumentTraceMetric(item.label, item.value, item.unit || '', item.key || '')).join('')}
+        </div>
+    `;
+}
+
+function renderInstrumentTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No instrument trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatInstrumentTraceDisplayValue(step.result, step.unit || ''))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderInstrumentTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list instrument-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderInstrumentCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">Instrument calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length || String(trace.status || '').toLowerCase().includes('waiting')
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderInstrumentTraceTextMetric('Instrument', input.instrumentId)}
+                ${renderInstrumentTraceTextMetric('Type', input.instrumentType)}
+                ${renderInstrumentTraceTextMetric('Attached Pipe', input.attachedPipe)}
+                ${renderInstrumentTraceMetric('Tap Location', input.tapLocationPercent, '%')}
+                ${renderInstrumentTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${input.outputMode ? renderInstrumentTraceTextMetric('Output Mode', input.outputMode) : ''}
+                ${input.setPoint !== undefined && input.setPoint !== '' ? renderInstrumentTraceMetric('Set Point', input.setPoint, '%') : ''}
+            </div>
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>Realtime Readouts</h4>
+            ${renderInstrumentTraceReadouts(trace.readouts || [])}
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table instrument-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderInstrumentTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderInstrumentTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>Assumptions</h4>
+            ${renderInstrumentTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block instrument-trace-block">
+            <h4>References / Method</h4>
+            ${renderInstrumentTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function getInstrumentCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildInstrumentCalculationTrace === 'function') {
+        return buildInstrumentCalculationTrace(nodeId, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderInstrumentCalculationTrace(nodeId, node, tbody) {
+    const trace = getInstrumentCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell instrument-trace-cell">
+            <details class="pipe-calculation-trace instrument-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body instrument-calculation-trace-body"
+                    data-key="instrument-calculation-trace-body"
+                    data-instrument-id="${escapeHtml(nodeId)}">
+                    ${renderInstrumentCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateInstrumentCalculationTraceReadout(instrumentId) {
+    document.querySelectorAll('[data-key="instrument-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = instrumentId || traceBody.dataset.instrumentId;
+        if (!nodeId || (instrumentId && traceBody.dataset.instrumentId !== instrumentId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getInstrumentCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderInstrumentCalculationTraceReport(trace);
+    });
+}
+
+function formatHeatExchangerTraceDisplayValue(value, unit = '', digits = 3) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, '', unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderHeatExchangerTraceMetric(label, value, unit = '', key = '', digits = 3) {
+    return `
+        <div class="pipe-trace-metric heat-exchanger-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatHeatExchangerTraceDisplayValue(value, unit, digits))}</strong>
+        </div>
+    `;
+}
+
+function renderHeatExchangerTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric heat-exchanger-trace-metric heat-exchanger-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderHeatExchangerTraceReadouts(readouts = []) {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return '<div class="pipe-trace-empty">No Heat Exchanger readout available.</div>';
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => renderHeatExchangerTraceMetric(item.label, item.value, item.unit || '', item.key || '', item.digits ?? 3)).join('')}
+        </div>
+    `;
+}
+
+function renderHeatExchangerTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No Heat Exchanger trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatHeatExchangerTraceDisplayValue(step.result, step.unit || '', step.digits ?? 3))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderHeatExchangerTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list heat-exchanger-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderHeatExchangerDependencyChain(items = []) {
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) {
+        return '<div class="pipe-trace-empty">No Heat Exchanger dependency chain available.</div>';
+    }
+    return `
+        <ol class="pipe-trace-list heat-exchanger-trace-list heat-exchanger-dependency-chain">
+            ${rows.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+    `;
+}
+
+function getHeatExchangerCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildHeatExchangerCalculationTrace === 'function') {
+        return buildHeatExchangerCalculationTrace(nodeId || node, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderHeatExchangerReadoutCards(nodeId, node, tbody) {
+    const trace = getHeatExchangerCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td colspan="2" style="padding: 10px 12px;">
+            ${renderHeatExchangerTraceReadouts(trace?.readouts || [])}
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function renderHeatExchangerCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">Heat Exchanger calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderHeatExchangerTraceTextMetric('Heat Exchanger', input.exchangerId)}
+                ${renderHeatExchangerTraceTextMetric('Model Basis', input.modelBasis)}
+                ${renderHeatExchangerTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${renderHeatExchangerTraceTextMetric('Active Fluid', input.fluidName)}
+                ${renderHeatExchangerTraceTextMetric('Flow Basis', input.flowBasis)}
+                ${renderHeatExchangerTraceTextMetric('Connected Pipe(s)', (input.connectedPipes || []).join(', ') || '-')}
+                ${renderHeatExchangerTraceTextMetric('Pump Path Role', input.npshPathRole)}
+            </div>
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Calculated Properties / Calculation Trace</h4>
+            ${renderHeatExchangerTraceReadouts(trace.readouts || [])}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>NPSH Role</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderHeatExchangerTraceMetric('Pressure Drop Head', trace.hydraulic?.pressureDropHead, 'm', 'hx-pressure-drop-head')}
+                ${renderHeatExchangerTraceMetric('NPSH Loss Contribution', trace.hydraulic?.npshLossContribution, 'm', 'hx-npsh-loss-contribution')}
+                ${renderHeatExchangerTraceTextMetric('Detected Role', input.npshPathRole)}
+            </div>
+            ${renderHeatExchangerTraceList((trace.npshPathInfo || []).map(row => `${row.pumpId}: ${row.role}; ${row.npshEffect}`), 'No detected pump suction/discharge path role.')}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Dependency Chain</h4>
+            ${renderHeatExchangerDependencyChain(trace.dependencyChain || [])}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table heat-exchanger-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderHeatExchangerTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderHeatExchangerTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>Assumptions</h4>
+            ${renderHeatExchangerTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block heat-exchanger-trace-block">
+            <h4>References / Method</h4>
+            ${renderHeatExchangerTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function renderHeatExchangerCalculationTrace(nodeId, node, tbody) {
+    const trace = getHeatExchangerCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell heat-exchanger-trace-cell">
+            <details class="pipe-calculation-trace heat-exchanger-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body heat-exchanger-calculation-trace-body"
+                    data-key="heat-exchanger-calculation-trace-body"
+                    data-exchanger-id="${escapeHtml(nodeId)}">
+                    ${renderHeatExchangerCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateHeatExchangerCalculationTraceReadout(exchangerId = null) {
+    document.querySelectorAll('[data-key="heat-exchanger-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = exchangerId || traceBody.dataset.exchangerId;
+        if (!nodeId || (exchangerId && traceBody.dataset.exchangerId !== exchangerId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getHeatExchangerCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderHeatExchangerCalculationTraceReport(trace);
+    });
+}
+
+function updateAllHeatExchangerCalculationTraceReadouts() {
+    if (typeof globalModel === 'undefined') return;
+    Object.keys(globalModel).forEach(nodeId => {
+        if (globalModel[nodeId]?.type === 'heatExchanger' && typeof buildHeatExchangerCalculationTrace === 'function') {
+            if (!globalModel[nodeId].results) globalModel[nodeId].results = {};
+            globalModel[nodeId].results.calculationTrace = buildHeatExchangerCalculationTrace(nodeId, globalModel, connections);
+        }
+    });
+    updateHeatExchangerCalculationTraceReadout();
+}
+
+function formatValveTraceDisplayValue(value, unit = '', digits = 3, key = '', label = '') {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof value === 'string') return value;
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, key, label || unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderValveTraceMetric(label, value, unit = '', key = '', digits = 3) {
+    return `
+        <div class="pipe-trace-metric valve-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatValveTraceDisplayValue(value, unit, digits, key, label))}</strong>
+        </div>
+    `;
+}
+
+function renderValveTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric valve-trace-metric valve-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderValveTraceReadouts(readouts = []) {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return '<div class="pipe-trace-empty">No valve readout available.</div>';
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => {
+                if (item.kind === 'text') return renderValveTraceTextMetric(item.label, item.value);
+                return renderValveTraceMetric(item.label, item.value, item.unit || '', item.key || '', item.digits ?? 3);
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderValveTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No valve trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatValveTraceDisplayValue(step.result, step.unit || '', step.digits ?? 3, step.title || '', step.title || ''))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderValveTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list valve-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderValveDependencyChain(items = []) {
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) {
+        return '<div class="pipe-trace-empty">No valve dependency chain available.</div>';
+    }
+    return `
+        <ol class="pipe-trace-list valve-trace-list valve-dependency-chain">
+            ${rows.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+    `;
+}
+
+function getValveCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildValveCalculationTrace === 'function') {
+        return buildValveCalculationTrace(nodeId || node, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderValveReadoutCards(nodeId, node, tbody) {
+    const trace = getValveCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td colspan="2" style="padding: 10px 12px;">
+            ${renderValveTraceReadouts(trace?.readouts || [])}
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function renderValveCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">Valve calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const hydraulic = trace.hydraulic || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderValveTraceTextMetric('Valve', input.valveId)}
+                ${renderValveTraceTextMetric('Object Type', input.objectType)}
+                ${renderValveTraceTextMetric('Model Basis', input.modelBasis)}
+                ${renderValveTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${renderValveTraceTextMetric('Active Fluid', input.activeFluid)}
+                ${renderValveTraceTextMetric('Flow Basis', input.flowBasis)}
+                ${renderValveTraceTextMetric('Connected Pipe(s)', (input.connectedPipes || []).join(', ') || '-')}
+                ${renderValveTraceTextMetric('Pump Path Role', input.npshPathRole)}
+            </div>
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Calculated Properties / Calculation Trace</h4>
+            ${renderValveTraceReadouts(trace.readouts || [])}
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>NPSH Role</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderValveTraceMetric('Valve Head Loss', hydraulic.headLoss, 'm', 'valve-head-loss')}
+                ${renderValveTraceMetric('Valve Pressure Drop', hydraulic.pressureDropBar, 'bar', 'valve-pressure-drop', 6)}
+                ${renderValveTraceMetric('NPSH Loss Contribution', hydraulic.npshLossContribution, 'm', 'valve-npsh-loss-contribution')}
+                ${renderValveTraceTextMetric('Detected Role', input.npshPathRole)}
+            </div>
+            ${renderValveTraceList((trace.npshPathInfo || []).map(row => `${row.pumpId}: ${row.role}; ${row.npshEffect}`), 'No detected pump suction/discharge path role.')}
+        </div>
+        ${trace.controlValve ? `
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Control Valve Sizing / NPSH Focus</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderValveTraceTextMetric('Sizing Basis', trace.controlValve.sizingBasis)}
+                ${renderValveTraceTextMetric('Flow Characteristic', trace.controlValve.flowCharacteristic)}
+                ${renderValveTraceMetric('Cv Input', trace.controlValve.cvInput, '', 'control-valve-cv-input')}
+                ${renderValveTraceMetric('Effective Cv', trace.controlValve.effectiveCv, '', 'control-valve-effective-cv')}
+                ${renderValveTraceMetric('Opening', trace.controlValve.openingPercent, '%', 'control-valve-opening')}
+                ${renderValveTraceMetric('Pressure Drop', trace.controlValve.pressureDropBar, 'bar', 'control-valve-pressure-drop', 6)}
+                ${renderValveTraceMetric('Head Loss', trace.controlValve.headLoss, 'm', 'control-valve-head-loss')}
+                ${renderValveTraceMetric('NPSH Loss Contribution', trace.controlValve.npshLossContribution, 'm', 'control-valve-npsh-loss-contribution')}
+            </div>
+            ${renderValveTraceList(trace.controlValve.limitations || [])}
+        </div>
+        ` : ''}
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Dependency Chain</h4>
+            ${renderValveDependencyChain(trace.dependencyChain || [])}
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table valve-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderValveTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderValveTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>Assumptions</h4>
+            ${renderValveTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block valve-trace-block">
+            <h4>References / Method</h4>
+            ${renderValveTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function renderValveCalculationTrace(nodeId, node, tbody) {
+    const trace = getValveCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell valve-trace-cell">
+            <details class="pipe-calculation-trace valve-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body valve-calculation-trace-body"
+                    data-key="valve-calculation-trace-body"
+                    data-valve-id="${escapeHtml(nodeId)}">
+                    ${renderValveCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateValveCalculationTraceReadout(valveId = null) {
+    document.querySelectorAll('[data-key="valve-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = valveId || traceBody.dataset.valveId;
+        if (!nodeId || (valveId && traceBody.dataset.valveId !== valveId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getValveCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderValveCalculationTraceReport(trace);
+    });
+}
+
+function updateAllValveCalculationTraceReadouts() {
+    if (typeof globalModel === 'undefined') return;
+    Object.keys(globalModel).forEach(nodeId => {
+        if (['valve', 'checkValve'].includes(globalModel[nodeId]?.type) && typeof buildValveCalculationTrace === 'function') {
+            if (!globalModel[nodeId].results) globalModel[nodeId].results = {};
+            globalModel[nodeId].results.calculationTrace = buildValveCalculationTrace(nodeId, globalModel, connections);
+        }
+    });
+    updateValveCalculationTraceReadout();
+}
+
+function formatSourceTraceDisplayValue(value, unit = '', digits = 3) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, '', unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderSourceTraceMetric(label, value, unit = '', key = '') {
+    return `
+        <div class="pipe-trace-metric source-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatSourceTraceDisplayValue(value, unit))}</strong>
+        </div>
+    `;
+}
+
+function renderSourceTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric source-trace-metric source-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderSourceTraceReadouts(readouts = []) {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return '<div class="pipe-trace-empty">No SRC boundary readout available.</div>';
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => renderSourceTraceMetric(item.label, item.value, item.unit || '', item.key || '')).join('')}
+        </div>
+    `;
+}
+
+function renderSourceTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No SRC trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatSourceTraceDisplayValue(step.result, step.unit || ''))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderSourceTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list source-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderSourceDependencyChain(items = []) {
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) {
+        return '<div class="pipe-trace-empty">No SRC dependency chain available.</div>';
+    }
+    return `
+        <ol class="pipe-trace-list source-trace-list source-dependency-chain">
+            ${rows.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+    `;
+}
+
+function renderSourceCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">SRC calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length || String(trace.status || '').toLowerCase().includes('missing')
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderSourceTraceTextMetric('SRC', input.sourceId)}
+                ${renderSourceTraceTextMetric('Source Type', input.sourceType)}
+                ${renderSourceTraceTextMetric('Boundary Role', input.role)}
+                ${renderSourceTraceTextMetric('Connection Rule', input.connectionStyle)}
+                ${renderSourceTraceTextMetric('Boundary Data Source', input.boundaryDataSource)}
+                ${renderSourceTraceTextMetric('Attached Equipment', input.attachedEquipment)}
+                ${renderSourceTraceTextMetric('Pressure Basis', input.pressureInputBasis)}
+                ${renderSourceTraceTextMetric('Pressure Energy Basis', input.pressureEnergyBasis)}
+                ${renderSourceTraceTextMetric('Temperature Mode', input.temperatureMode)}
+                ${renderSourceTraceTextMetric('Flow Input Mode', input.flowInputMode)}
+                ${renderSourceTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${renderSourceTraceTextMetric('Hydraulic Pipe(s)', (input.hydraulicPipes || []).join(', ') || '-')}
+                ${renderSourceTraceTextMetric('Pump Path Status', input.pumpPathStatus)}
+                ${renderSourceTraceTextMetric('Pump Path', input.pumpPath)}
+            </div>
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Boundary / Fluid Readouts</h4>
+            ${renderSourceTraceReadouts(trace.readouts || [])}
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Dependency Chain</h4>
+            ${renderSourceDependencyChain(trace.dependencyChain || [])}
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table source-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderSourceTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderSourceTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>Assumptions</h4>
+            ${renderSourceTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block source-trace-block">
+            <h4>References / Method</h4>
+            ${renderSourceTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function getSourceCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildSourceCalculationTrace === 'function') {
+        return buildSourceCalculationTrace(nodeId, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderSourceCalculationTrace(nodeId, node, tbody) {
+    const trace = getSourceCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell source-trace-cell">
+            <details class="pipe-calculation-trace source-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body source-calculation-trace-body"
+                    data-key="source-calculation-trace-body"
+                    data-source-id="${escapeHtml(nodeId)}">
+                    ${renderSourceCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateSourceCalculationTraceReadout(sourceId = null) {
+    document.querySelectorAll('[data-key="source-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = sourceId || traceBody.dataset.sourceId;
+        if (!nodeId || (sourceId && traceBody.dataset.sourceId !== sourceId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getSourceCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderSourceCalculationTraceReport(trace);
+    });
+}
+
+function updateAllSourceCalculationTraceReadouts() {
+    if (typeof globalModel === 'undefined') return;
+    Object.keys(globalModel).forEach(nodeId => {
+        if (globalModel[nodeId]?.type === 'source') {
+            if (typeof buildSourceCalculationTrace === 'function') {
+                if (!globalModel[nodeId].results) globalModel[nodeId].results = {};
+                globalModel[nodeId].results.calculationTrace = buildSourceCalculationTrace(nodeId, globalModel, connections);
+            }
+        }
+    });
+    updateSourceCalculationTraceReadout();
+}
+
 function renderTankReadoutCards(node, tbody) {
     const results = node.results || {};
     const warnings = results.warnings || [];
@@ -379,16 +1656,24 @@ function renderTankReadoutCards(node, tbody) {
                     <strong class="prop-value" data-key="tank-outlet-flow">${formatReadoutValue(results.outletFlow)} m3/h</strong>
                 </div>
                 <div class="boundary-result-card">
+                    <span>Total SRC Feed Flow</span>
+                    <strong class="prop-value" data-key="tank-source-feed-flow">${formatReadoutValue(results.sourceFeedFlow)} m3/h</strong>
+                </div>
+                <div class="boundary-result-card">
                     <span>Net Flow</span>
                     <strong class="prop-value" data-key="tank-net-flow">${formatReadoutValue(results.netFlow)} m3/h</strong>
                 </div>
                 <div class="boundary-result-card">
-                    <span>Operating Abs. P</span>
-                    <strong class="prop-value" data-key="tank-operating-abs-pressure">${formatReadoutValue(results.operatingPressureAbsolute)} bar a</strong>
+                    <span>Level Trend</span>
+                    <strong class="prop-value" data-key="tank-level-trend">${escapeHtml(results.levelTrend || '-')}</strong>
+                </div>
+                <div class="boundary-result-card boundary-result-card-wide">
+                    <span>SRC Feed Flow Breakdown</span>
+                    <div class="tank-source-feed-breakdown" data-key="tank-source-feed-breakdown">${renderTankSourceFeedFlowBreakdown(results.sourceFeedFlows)}</div>
                 </div>
                 <div class="boundary-result-card">
-                    <span>SRC Feed Flow</span>
-                    <strong class="prop-value" data-key="tank-source-feed-flow">${formatReadoutValue(results.sourceFeedFlow)} m3/h</strong>
+                    <span>Operating Abs. P</span>
+                    <strong class="prop-value" data-key="tank-operating-abs-pressure">${formatReadoutValue(results.operatingPressureAbsolute)} bar a</strong>
                 </div>
                 <div class="boundary-result-card boundary-result-card-wide">
                     <span>Hydraulic Status</span>
@@ -475,10 +1760,10 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         addRow('Base Elevation', node.props.elevation, 'elevation', false, 'm', 'number');
         addRow('Tank Diameter', node.props.diameter, 'diameter', false, 'm', 'number');
         addRow('Tank Height', node.props.tankHeight, 'tankHeight', false, 'm', 'number');
-        addRow('Current Level', node.props.liquidLevel, 'liquidLevel', false, 'm', 'number');
-        addRow('High Liquid Level (HLL)', node.props.hll, 'hll', false, 'm', 'number');
-        addRow('Normal Liq. Level (NLL)', node.props.nll, 'nll', false, 'm', 'number');
-        addRow('Low Liquid Level (LLL)', node.props.lll, 'lll', false, 'm', 'number');
+        addRow('Current Level above Base', node.props.liquidLevel, 'liquidLevel', false, 'm', 'number');
+        addRow('HLL above Base', node.props.hll, 'hll', false, 'm', 'number');
+        addRow('NLL above Base', node.props.nll, 'nll', false, 'm', 'number');
+        addRow('LLL above Base', node.props.lll, 'lll', false, 'm', 'number');
         addRow('Transmitter Elev. from Datum', node.props.tLevelElev, 'tLevelElev', false, 'm', 'number');
         addRow('Liquid Volume', node.props.liquidVolume, 'tank-liquid-volume', true, 'm3');
         addRow('Total Capacity', node.props.totalCapacity, 'tank-total-capacity', true, 'm3');
@@ -501,6 +1786,8 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
 
         appendSectionHeader(tbody, 'Hydraulic Readout');
         renderTankReadoutCards(node, tbody);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderTankCalculationTrace(node, tbody);
         return;
     }
 
@@ -590,6 +1877,9 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         if (linkedToFluidBasis && typeof syncSourceTemperatureFromFluidBasis === 'function') {
             syncSourceTemperatureFromFluidBasis(nodeId);
         }
+        const effectiveFluidProps = typeof getFluidPropsAtSourceTemperature === 'function'
+            ? getFluidPropsAtSourceTemperature(node, fluidProps)
+            : fluidProps;
 
         addRow(
             linkedToFluidBasis ? 'Temperature (Fluid Basis)' : 'Temperature',
@@ -599,9 +1889,12 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
             'deg C',
             'number'
         );
-        addRow('Density Used', fluidProps.density, 'source-fluid-density', true, 'kg/m3');
-        addRow('Kinematic Visc. Used', fluidProps.viscosity, 'source-fluid-viscosity', true, 'cSt');
-        addRow('Vapor Pressure Used', fluidProps.vaporPressure, 'source-fluid-vapor-pressure', true, 'bar a');
+        addRow('Density Used', effectiveFluidProps.density, 'source-fluid-density', true, 'kg/m3');
+        addRow('Kinematic Visc. Used', effectiveFluidProps.viscosity, 'source-fluid-viscosity', true, 'cSt');
+        addRow('Vapor Pressure Used', effectiveFluidProps.vaporPressure, 'source-fluid-vapor-pressure', true, 'bar a');
+        if (effectiveFluidProps.warnings?.length) {
+            addRow('Fluid Property Warning', effectiveFluidProps.warnings.join(' | '), 'source-fluid-warning', true);
+        }
 
         appendSectionHeader(tbody, 'Flow Specification');
         const volumetricFlowMode = typeof SOURCE_FLOW_MODE_VOLUME !== 'undefined' ? SOURCE_FLOW_MODE_VOLUME : 'Volumetric Flow';
@@ -629,6 +1922,8 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         }
 
         renderSourceConnectionControls(nodeId, node, addRow, tbody);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderSourceCalculationTrace(nodeId, node, tbody);
         return;
     }
 
@@ -668,6 +1963,14 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         return;
     }
 
+    if ((type === 'valve' || type === 'checkValve') && typeof updateValveCompatibilityResult === 'function') {
+        updateValveCompatibilityResult(nodeId, globalModel, connections, { syncDiameter: true });
+    }
+
+    if (typeof isInstrumentType === 'function' && isInstrumentType(type) && typeof updateInstrumentReadout === 'function') {
+        updateInstrumentReadout(nodeId);
+    }
+
     Object.keys(schema).forEach(key => {
         const def = schema[key];
         if (!node.props) node.props = {};
@@ -686,8 +1989,50 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         );
     });
 
+    if (type === 'separator' || type === 'verticalVessel') {
+        appendSectionHeader(tbody, 'Calculated Vessel Readout');
+        renderSeparatorReadoutCards(nodeId, node, tbody);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderSeparatorCalculationTrace(nodeId, node, tbody);
+    }
+
+    if (type === 'heatExchanger') {
+        if (typeof updateHeatExchangerReadout === 'function') {
+            updateHeatExchangerReadout(nodeId);
+        }
+        appendSectionHeader(tbody, 'Calculated Exchanger Readout');
+        renderHeatExchangerReadoutCards(nodeId, node, tbody);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderHeatExchangerCalculationTrace(nodeId, node, tbody);
+    }
+
     if (type === 'checkValve') {
         addRow('Check Status', node.props.checkStatus || '-', 'checkStatus', true, '');
+    }
+
+    if (type === 'valve' || type === 'checkValve') {
+        if (typeof updateValveReadout === 'function') {
+            updateValveReadout(nodeId);
+        }
+        const audit = typeof updateValveCompatibilityResult === 'function'
+            ? updateValveCompatibilityResult(nodeId, globalModel, connections, { syncDiameter: true })
+            : node.results?.pipeCompatibility;
+        const warnings = audit?.warnings || node.results?.warnings || [];
+        appendSectionHeader(tbody, 'Calculated Valve Readout');
+        renderValveReadoutCards(nodeId, node, tbody);
+        appendSectionHeader(tbody, 'Pipe / Valve Compatibility');
+        addRow('Connected Pipe(s)', audit?.connectedPipeText || '-', 'valve-connected-pipes', true);
+        addRow('Size Match', audit?.sizeMatchStatus || '-', 'valve-size-match', true);
+        addRow('Diameter Basis', audit?.diameterBasis || 'No connected pipe', 'valve-diameter-basis', true);
+        addRow('Bore Basis', audit?.boreBasis || '-', 'valve-bore-basis', true);
+        addRow('Spec Basis', audit?.specBasis || '-', 'valve-spec-basis', true);
+        addRow('Reducer/Expander', audit?.reducerExpanderBasis || '-', 'valve-reducer-expander-basis', true);
+        addRow('Equivalent Loss', audit?.equivalentLossText || '-', 'valve-equivalent-loss', true);
+        addRow('Loss Source', audit?.lossSourceText || '-', 'valve-loss-source', true);
+        addRow('Severity', audit?.severity || '-', 'valve-compatibility-severity', true);
+        addRow('Compatibility Warnings', warnings.join(' | ') || 'OK', 'valve-warnings', true);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderValveCalculationTrace(nodeId, node, tbody);
     }
 
     if (typeof isInstrumentType === 'function' && isInstrumentType(type)) {
@@ -722,6 +2067,9 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
             detachInstrumentFromPipe(nodeId);
             updateSimulation({ renderSidebarAfter: false });
         });
+
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderInstrumentCalculationTrace(nodeId, node, tbody);
     }
 
 }

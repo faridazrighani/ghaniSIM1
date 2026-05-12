@@ -56,8 +56,9 @@ const PUMP_OPERATING_STATUS_LABELS = {
 const WARNING_PANEL_STATUS_PRIORITY = {
     risk: 0,
     warning: 1,
-    incomplete: 2,
-    normal: 3
+    advisory: 2,
+    incomplete: 3,
+    normal: 4
 };
 
 const CANVAS_WARNING_PANEL_MARGIN = 12;
@@ -173,12 +174,13 @@ function getGenericWarningStatus(node) {
         return 'incomplete';
     }
 
+    if (status.includes('advisory')) return 'advisory';
     if (status === 'warning' || warnings.length > 0) return 'warning';
     return 'normal';
 }
 
 function getEquipmentWarningSummary(nodeId, node) {
-    if (!node || nodeId === 'FLUID' || node.type === 'pipe') return null;
+    if (!node || nodeId === 'FLUID' || nodeId === 'SETTINGS' || node.type === 'pipe' || node.type === 'settings') return null;
 
     if (node.type === 'pump') {
         const visualStatus = getPumpOperatingVisualStatus(node);
@@ -215,7 +217,7 @@ function getEquipmentWarningSummary(nodeId, node) {
         name: node.name || nodeId,
         type: node.type,
         status,
-        label: status === 'incomplete' ? 'Incomplete' : 'Warning',
+        label: status === 'incomplete' ? 'Incomplete' : (status === 'advisory' ? 'Advisory' : 'Warning'),
         detail: warnings[0] || node.results?.status || 'Review operating results.'
     };
 }
@@ -397,6 +399,45 @@ function updateAllObjectOperatingStatusVisuals() {
     updateCanvasWarningPanel();
 }
 
+function updateSourceTypeFromContextMenu(sourceId, sourceType) {
+    const source = globalModel[sourceId];
+    if (!source || source.type !== 'source' || !sourceType) return null;
+    const sourceTypeChanged = source.props?.sourceType !== sourceType;
+
+    if (sourceTypeChanged && typeof captureState === 'function') captureState();
+    if (!source.props) source.props = {};
+    source.props.sourceType = sourceType;
+
+    if (sourceTypeChanged && typeof reconcileSourceBoundaryConfiguration === 'function') {
+        reconcileSourceBoundaryConfiguration(sourceId, { detachInvalidAttachment: true });
+    }
+    if (typeof normalizeSourceProps === 'function') {
+        normalizeSourceProps(source);
+    }
+    if (typeof syncSourceFlowFromInputMode === 'function') {
+        syncSourceFlowFromInputMode(sourceId);
+    }
+    if (typeof drawConnections === 'function') drawConnections();
+    if (typeof renderSidebar === 'function') renderSidebar(sourceId);
+    if (typeof updateSimulation === 'function') updateSimulation({ renderSidebarAfter: false });
+    return source;
+}
+
+function startSourceTypeActionFromContextMenu(sourceId, sourceType, e) {
+    const source = updateSourceTypeFromContextMenu(sourceId, sourceType);
+    if (!source) return;
+
+    if (typeof isSourceTypeSemanticAttachmentCapable === 'function'
+        ? isSourceTypeSemanticAttachmentCapable(source)
+        : sourceType === 'Open Tank / Reservoir' || sourceType === 'Pressurized Vessel') {
+        setAppMode('CONNECT');
+        startSourceAttachment(sourceId, e);
+        return;
+    }
+
+    startHydraulicConnectionFromSource(sourceId, e);
+}
+
 function setAppMode(mode) {
     appMode = mode;
 
@@ -509,6 +550,9 @@ function getObjectClassName(type) {
 }
 
 function getLineMonitorReadoutMarkup() {
+    const pressureUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('pressureAbs') : 'bar a';
+    const temperatureUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('temperature') : 'deg C';
+    const flowUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('flow') : 'm3/h';
     return `
         <div class="line-monitor-readout" aria-label="PTF pipeline readout">
             <table>
@@ -516,17 +560,17 @@ function getLineMonitorReadoutMarkup() {
                     <tr>
                         <th scope="row">P</th>
                         <td data-readout-key="pressure">-</td>
-                        <td>bar a</td>
+                        <td data-readout-unit="pressure">${escapeObjectMarkup(pressureUnit)}</td>
                     </tr>
                     <tr>
                         <th scope="row">T</th>
                         <td data-readout-key="temperature">-</td>
-                        <td>deg C</td>
+                        <td data-readout-unit="temperature">${escapeObjectMarkup(temperatureUnit)}</td>
                     </tr>
                     <tr>
                         <th scope="row">F</th>
                         <td data-readout-key="flow">-</td>
-                        <td>m3/h</td>
+                        <td data-readout-unit="flow">${escapeObjectMarkup(flowUnit)}</td>
                     </tr>
                 </tbody>
             </table>
@@ -630,9 +674,22 @@ function selectNode(nodeId, element) {
     if (nodeId === 'FLUID' && typeof openFluidBasisTaskWindow === 'function') {
         document.querySelectorAll('.pfd-object').forEach(el => el.classList.remove('selected'));
         currentSelectedNode = null;
-        renderPumpPropertiesSidebar(null);
         openFluidBasisTaskWindow();
         return;
+    }
+
+    if (globalModel[nodeId]?.type === 'pipe' && typeof requestPipePropertiesTaskWindowOpen === 'function') {
+        requestPipePropertiesTaskWindowOpen(nodeId);
+    }
+    if (globalModel[nodeId]?.type === 'tank' && typeof requestTankPropertiesTaskWindowOpen === 'function') {
+        requestTankPropertiesTaskWindowOpen(nodeId);
+    }
+    if (
+        globalModel[nodeId]
+        && !['pipe', 'tank', 'fluid'].includes(globalModel[nodeId].type)
+        && typeof requestObjectPropertiesTaskWindowOpen === 'function'
+    ) {
+        requestObjectPropertiesTaskWindowOpen(nodeId);
     }
 
     // Clear previous selection
@@ -641,9 +698,6 @@ function selectNode(nodeId, element) {
     if (element) element.classList.add('selected');
     currentSelectedNode = nodeId;
     renderSidebar(nodeId);
-    
-    // Show editor hint if it's the pump
-    document.getElementById('editorHint').style.display = (globalModel[nodeId]?.type === 'pump') ? 'block' : 'none';
 }
 
 function getObjectElement(id) {
@@ -1103,23 +1157,22 @@ function makeDraggable(obj) {
 
         if (node && node.type === 'source') {
             const sourceLink = getSourceLink(nodeId);
-            const items = [
-            ];
+            const currentSourceType = node.props?.sourceType || (typeof SOURCE_TYPE_OPEN_TANK !== 'undefined' ? SOURCE_TYPE_OPEN_TANK : 'Open Tank / Reservoir');
+            const sourceTypeOptions = typeof SOURCE_TYPE_OPTIONS !== 'undefined'
+                ? SOURCE_TYPE_OPTIONS
+                : [
+                    'Open Tank / Reservoir',
+                    'Pressurized Vessel',
+                    'External Header / Pipe Tie-in',
+                    'Fixed Flow Source',
+                    'Standalone Boundary Source'
+                ];
 
-            if (typeof isSourceTypeSemanticAttachmentCapable !== 'function' || isSourceTypeSemanticAttachmentCapable(node)) {
-                items.push({
-                    label: 'Start dashed tank/vessel attachment',
-                    action: () => {
-                        setAppMode('CONNECT');
-                        startSourceAttachment(nodeId, e);
-                    }
-                });
-            } else {
-                items.push({
-                    label: 'Start solid hydraulic pipe',
-                    action: () => startHydraulicConnectionFromSource(nodeId, e)
-                });
-            }
+            const items = sourceTypeOptions.map(sourceType => ({
+                label: sourceType,
+                active: sourceType === currentSourceType,
+                action: () => startSourceTypeActionFromContextMenu(nodeId, sourceType, e)
+            }));
 
             if (sourceLink) {
                 items.push({
@@ -1277,6 +1330,9 @@ function startInstrumentAttachment(instrumentId, e = null) {
 }
 
 function addEquipment(type, placement = null) {
+    if (typeof ensureBasisConfirmedBeforeModeling === 'function' && !ensureBasisConfirmedBeforeModeling()) {
+        return null;
+    }
     captureState();
 
     const prefix = getObjectPrefix(type);

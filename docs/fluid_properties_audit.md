@@ -61,7 +61,7 @@ NIST REFPROP documentation was not separately used in this audit because the Che
 | Vapor pressure head | `Hv = Pv / (rho * g)` | `Pv(bar a) * 100000 = Pv(Pa)`; result in `m` | Formula verified |
 | Speed of sound | `a = sqrt(K / rho)` | `K(GPa) * 1e9 = K(Pa)`; result in `m/s` | Formula verified |
 | Temperature | `T(K) = T(deg C) + 273.15` where required by correlations | Water and methanol correlations use the required internal temperature basis | Formula verified for current implementation path |
-| Pressure input conversion | Gauge pressure is converted to absolute using `P_abs = P_g + ATM_PRESSURE_BAR` | App constant `ATM_PRESSURE_BAR = 1.013` | Formula verified |
+| Pressure input conversion | Gauge pressure is converted to absolute using `P_abs = P_g + ATM_PRESSURE_BAR` | App constant `ATM_PRESSURE_BAR = 1.01325` | Formula verified |
 
 ## 5. Unit Conversion Verification
 

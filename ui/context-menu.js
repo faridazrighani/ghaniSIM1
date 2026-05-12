@@ -21,7 +21,11 @@ function showContextMenu(x, y, items) {
     items.forEach(item => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = item.danger ? 'danger' : '';
+        btn.className = [
+            item.danger ? 'danger' : '',
+            item.active ? 'active' : ''
+        ].filter(Boolean).join(' ');
+        if (item.active) btn.setAttribute('aria-current', 'true');
         btn.textContent = item.label;
         btn.addEventListener('click', (e) => {
             e.stopPropagation();

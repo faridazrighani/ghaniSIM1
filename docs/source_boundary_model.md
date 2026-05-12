@@ -64,6 +64,13 @@ For External Header / Pipe Tie-in:
 
 - Static pressure basis adds velocity head once to form total hydraulic head.
 - Total/Stagnation pressure basis already includes velocity head and must not add it again.
+- Pump Equation Steps display this as `Source Velocity Head`, so the trace matches the realtime NPSHA calculation.
+
+Gauge pressure uses the standard atmosphere constant:
+
+```text
+Pabs = Pgauge + 1.01325 bar
+```
 
 ## Validation Rules
 
@@ -95,6 +102,7 @@ The application should warn when:
 ## External References
 
 - NIST Chemistry WebBook SRD 69, Thermophysical Properties of Fluid Systems: https://webbook.nist.gov/chemistry/fluid/
+- NIST Guide to the SI, Appendix B, standard atmosphere conversion: https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors
 - NASA Glenn Research Center, Bernoulli's Equation: https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/bernoullis-equation/
 
 ## Implementation Notes

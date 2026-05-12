@@ -79,5 +79,5 @@ const SINK_SCHEMA = {
 };
 
 const JUNCTION_SCHEMA = {
-    pressure: { label: 'Node Pressure', unit: 'bar a', type: 'number', default: 1.013, readonly: true }
+    pressure: { label: 'Node Pressure', unit: 'bar a', type: 'number', default: 1.01325, readonly: true }
 };

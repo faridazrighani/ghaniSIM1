@@ -1,5 +1,3 @@
-const TANK_PSV_MODE_MANUAL = 'Manual';
-const TANK_PSV_MODE_SUGGESTED = 'Suggested';
 const TANK_CODE_BASIS_API_650 = 'API 650 Atmospheric Tank';
 const TANK_CODE_BASIS_API_620 = 'API 620 Low-pressure Storage Tank';
 const TANK_CODE_BASIS_USER_DEFINED = 'User-defined';
@@ -31,12 +29,12 @@ const TANK_SCHEMA = {
     liquidVolume: { label: 'Liquid Volume', unit: 'm3', type: 'number', default: 58.905, readonly: true },
     totalCapacity: { label: 'Total Capacity', unit: 'm3', type: 'number', default: 117.81, readonly: true },
     fillPercent: { label: 'Fill Percentage', unit: '%', type: 'number', default: 50, readonly: true },
-    liquidLevel: { label: 'Current Level', unit: 'm', type: 'number', default: 3 },
+    liquidLevel: { label: 'Current Level above Base', unit: 'm', type: 'number', default: 3 },
     inletNozzleElevation: { label: 'Inlet Nozzle Elev. from Datum', unit: 'm', type: 'number', default: 9 },
     outletNozzleElevation: { label: 'Outlet Nozzle Elev. from Datum', unit: 'm', type: 'number', default: 7 },
-    hll: { label: 'High Liquid Level (HLL)', unit: 'm', type: 'number', default: 5 },
-    nll: { label: 'Normal Liq. Level (NLL)', unit: 'm', type: 'number', default: 3 },
-    lll: { label: 'Low Liquid Level (LLL)', unit: 'm', type: 'number', default: 1.5 },
+    hll: { label: 'HLL above Base', unit: 'm', type: 'number', default: 5 },
+    nll: { label: 'NLL above Base', unit: 'm', type: 'number', default: 3 },
+    lll: { label: 'LLL above Base', unit: 'm', type: 'number', default: 1.5 },
     tLevelElev: { label: 'Transmitter Elev. from Datum', unit: 'm', type: 'number', default: 9 },
     pressureInputBasis: {
         label: 'Pressure Basis',

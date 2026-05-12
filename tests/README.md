@@ -31,6 +31,7 @@ The SRC boundary validation checks:
 - pipe high point pressure warnings are reported when local pressure may fall below vapor pressure/minimum pressure
 - fixed SRC flow plus downstream pressure boundary reports residual head as an over-specified system
 - SRC UI/model rules allow dashed semantic attachment only to tank/vessel; pump/valve attachment is rejected, and External Header forces Manual boundary data
+- Vessel H trace reports pressure basis, liquid/nozzle elevation, pressure-drop head, residence holdup, unit conversion, and local/external reference basis
 
 The pipe validation checks:
 

@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.DEFAULT_SIMULATION_STATE) {
         applySimulationState(JSON.stringify(window.DEFAULT_SIMULATION_STATE));
     }
+    if (typeof ensureSimulationSettings === 'function') ensureSimulationSettings();
+    if (typeof updateBasisStatusPill === 'function') updateBasisStatusPill();
 
     // 4. Setup Global Mode Button Listeners
     const btnSelect = document.getElementById('btn-mode-select');
@@ -40,6 +42,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnFluidBasis) {
         btnFluidBasis.addEventListener('click', () => openFluidBasis());
+    }
+    const basisStatusPill = document.getElementById('basisStatusPill');
+    if (basisStatusPill) {
+        basisStatusPill.addEventListener('click', () => openFluidBasis());
     }
 
     // 5. Canvas Event Listeners
@@ -130,7 +136,14 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         updateSimulation();
         drawConnections();
-        if (typeof openAboutDialog === 'function') {
+        if (typeof isBasisConfirmed === 'function' && !isBasisConfirmed()) {
+            if (typeof openFluidBasisTaskWindow === 'function') {
+                openFluidBasisTaskWindow({
+                    setupRequired: true,
+                    reason: 'Set Fluid Basis and Unit Standard before adding equipment.'
+                });
+            }
+        } else if (typeof openAboutDialog === 'function') {
             openAboutDialog();
         }
     }, 100);

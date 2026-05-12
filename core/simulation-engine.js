@@ -71,9 +71,22 @@ function updatePumpChart(pumpId) {
     const pump = globalModel[pumpId];
     if (!pumpChartInstance || !pump || pump.type !== 'pump' || !pump.results) return;
 
-    pumpChartInstance.data.labels = pump.results.sysCurve.map(d => d[0]);
-    pumpChartInstance.data.datasets[0].data = pump.results.pumpCurve.map(d => d[1]);
-    pumpChartInstance.data.datasets[1].data = pump.results.sysCurve.map(d => d[1]);
+    const flowUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('flow') : 'm3/h';
+    const headUnit = typeof getDisplayUnit === 'function' ? getDisplayUnit('head') : 'm';
+    const toFlow = value => typeof convertToDisplay === 'function' ? convertToDisplay(value, 'flow') : value;
+    const toHead = value => value === null || value === undefined
+        ? value
+        : (typeof convertToDisplay === 'function' ? convertToDisplay(value, 'head') : value);
+
+    pumpChartInstance.data.labels = pump.results.sysCurve.map(d => toFlow(d[0]));
+    pumpChartInstance.data.datasets[0].data = pump.results.pumpCurve.map(d => toHead(d[1]));
+    pumpChartInstance.data.datasets[1].data = pump.results.sysCurve.map(d => toHead(d[1]));
+    if (pumpChartInstance.options?.scales?.x?.title) {
+        pumpChartInstance.options.scales.x.title.text = `Flow Rate (${flowUnit})`;
+    }
+    if (pumpChartInstance.options?.scales?.y?.title) {
+        pumpChartInstance.options.scales.y.title.text = `Head (${headUnit})`;
+    }
     pumpChartInstance.update('none');
 }
 
@@ -156,7 +169,10 @@ function applyPumpOperatingPointResults(pump, hydraulicContext, hydraulicSnapsho
         ? buildPumpNpshEvaluationResult(pump, hydraulicContext, hydraulicSnapshot, opFlow, opHead, performanceModel)
         : null;
     const operatingRegion = classifyPumpOperatingRegion(opFlow, pump.props);
-    const warnings = [...additionalWarnings];
+    const warnings = [...new Set([
+        ...additionalWarnings,
+        ...((hydraulicContext?.networkWarnings || []).filter(Boolean))
+    ])];
 
     if (operatingRegion.status === 'AOR') {
         warnings.push('Operating point is outside POR; review reliability/efficiency.');
@@ -240,15 +256,40 @@ function updateLineMonitorCanvasReadout(instrumentId) {
     const objectEl = getObjectElement(instrumentId);
     if (!objectEl) return;
 
-    const setValue = (key, value, digits) => {
+    const quantityByKey = {
+        pressure: 'pressureAbs',
+        temperature: 'temperature',
+        flow: 'flow'
+    };
+    const unitByKey = {
+        pressure: 'bar a',
+        temperature: 'deg C',
+        flow: 'm3/h'
+    };
+    const getDigits = (key, unit) => {
+        if (key === 'temperature') return 1;
+        if (key === 'flow' && unit === 'm3/s') return 4;
+        return 2;
+    };
+
+    const setValue = (key, value) => {
+        const quantity = quantityByKey[key];
+        const displayValue = quantity && typeof convertToDisplay === 'function'
+            ? convertToDisplay(value, quantity)
+            : value;
+        const displayUnit = quantity && typeof getDisplayUnit === 'function'
+            ? getDisplayUnit(quantity)
+            : unitByKey[key];
         const cell = objectEl.querySelector(`[data-readout-key="${key}"]`);
-        if (cell) cell.textContent = formatCanvasReadoutValue(value, digits);
+        if (cell) cell.textContent = formatCanvasReadoutValue(displayValue, getDigits(key, displayUnit));
+        const unitCell = objectEl.querySelector(`[data-readout-unit="${key}"]`);
+        if (unitCell) unitCell.textContent = displayUnit || '';
     };
 
     const props = instrument.props || {};
-    setValue('pressure', props.measuredPressure, 2);
-    setValue('temperature', props.measuredTemperature, 1);
-    setValue('flow', props.measuredFlow, 2);
+    setValue('pressure', props.measuredPressure);
+    setValue('temperature', props.measuredTemperature);
+    setValue('flow', props.measuredFlow);
     objectEl.classList.toggle('is-attached', !!props.attachedTo);
 }
 
@@ -277,6 +318,11 @@ function updateInstrumentReadout(instrumentId) {
         instrument.props.measuredPercent = readout.percent;
     }
 
+    if (typeof buildInstrumentCalculationTrace === 'function') {
+        if (!instrument.results) instrument.results = {};
+        instrument.results.calculationTrace = buildInstrumentCalculationTrace(instrumentId, globalModel, connections);
+    }
+
     updateLineMonitorCanvasReadout(instrumentId);
 
     if (currentSelectedNode === instrumentId) {
@@ -289,6 +335,10 @@ function updateInstrumentReadout(instrumentId) {
             setSidebarReadout('instrument-measured', readout.value, readout.unit);
             setSidebarReadout('instrument-signal', readout.percent, readout.percent === null ? '' : '%');
         }
+    }
+
+    if (typeof updateInstrumentCalculationTraceReadout === 'function') {
+        updateInstrumentCalculationTraceReadout(instrumentId);
     }
 }
 
@@ -368,17 +418,47 @@ function getTankSourceFeedLinks(tankId) {
     return sourceLinks.filter(link => link.targetId === tankId && globalModel[link.sourceId]?.type === 'source');
 }
 
-function getTankSourceFeedFlow(tankId) {
+function getTankSourceFeedFlowBreakdown(tankId) {
     return getTankSourceFeedLinks(tankId).reduce((sum, link) => {
-        const flow = parseFloat(globalModel[link.sourceId]?.props?.flow);
-        return sum + (Number.isFinite(flow) ? flow : 0);
-    }, 0);
+        const source = globalModel[link.sourceId];
+        const flow = parseFloat(source?.props?.flow);
+        sum.push({
+            sourceId: link.sourceId,
+            sourceType: source?.props?.sourceType || '-',
+            flow: Number.isFinite(flow) ? Number(flow.toFixed(3)) : null
+        });
+        return sum;
+    }, []);
+}
+
+function getTankSourceFeedFlowTotal(sourceFeedFlows) {
+    return (sourceFeedFlows || []).reduce((sum, row) => (
+        sum + (Number.isFinite(row?.flow) ? row.flow : 0)
+    ), 0);
 }
 
 function averageFiniteValues(values) {
     const valid = (values || []).filter(value => Number.isFinite(value));
     if (valid.length === 0) return null;
     return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function getTankLevelTrend(netFlow, hasFlow, flowTolerance) {
+    if (!hasFlow || !Number.isFinite(netFlow)) return 'No flow';
+    if (Math.abs(netFlow) <= flowTolerance) return 'Balanced';
+    return netFlow > 0 ? 'Rising' : 'Falling';
+}
+
+function formatSignedTankFlow(flow) {
+    if (!Number.isFinite(flow)) return '-';
+    const sign = flow > 0 ? '+' : '';
+    return `${sign}${flow.toFixed(3)}`;
+}
+
+function getTankInventoryAdvisory(netFlow, levelTrend) {
+    if (!Number.isFinite(netFlow) || !['Rising', 'Falling'].includes(levelTrend)) return '';
+    const direction = levelTrend === 'Rising' ? 'rise' : 'fall';
+    return `Tank inventory advisory: Net Flow = ${formatSignedTankFlow(netFlow)} m3/h; level will ${direction}. Pump/NPSH calculations use the current liquid level until a dynamic level model is solved.`;
 }
 
 function updateTankPressureReadout(tankId) {
@@ -424,12 +504,14 @@ function updateTankPressureReadout(tankId) {
         }
     });
 
-    const sourceFeedFlow = getTankSourceFeedFlow(tankId);
+    const sourceFeedFlows = getTankSourceFeedFlowBreakdown(tankId);
+    const sourceFeedFlow = getTankSourceFeedFlowTotal(sourceFeedFlows);
     const inletFlow = pipeInletFlow + sourceFeedFlow;
     const outletFlow = pipeOutletFlow;
     const hasFlow = inletFlow > 0 || outletFlow > 0;
     const netFlow = hasFlow ? inletFlow - outletFlow : null;
     const flowTolerance = Math.max(0.01, Math.max(inletFlow, outletFlow) * 0.02);
+    const levelTrend = getTankLevelTrend(netFlow, hasFlow, flowTolerance);
 
     let hydraulicStatus = 'No hydraulic connection';
     if (tankConnections.length === 0 && sourceFeedLinks.length > 0) {
@@ -444,6 +526,7 @@ function updateTankPressureReadout(tankId) {
         ? evaluateTankPressureSafety(tank.props, fluid?.props || {})
         : { status: '-', warnings: [], suggestedPressure: 0, suggestedBasis: 'Not available' };
     const warnings = [...safety.warnings];
+    const advisories = [];
     const operatingPressureAbsolute = typeof getNodeAbsolutePressureBar === 'function'
         ? getNodeAbsolutePressureBar(tank)
         : parseFloat(tank.props.pressure);
@@ -454,12 +537,14 @@ function updateTankPressureReadout(tankId) {
     if (tankConnections.length > 0 && sidePressures.length === 0) {
         warnings.push('Connected pipe pressure is not solved; connect upstream SRC and downstream SNK to calculate flow.');
     }
-    if (hasFlow && Number.isFinite(netFlow) && Math.abs(netFlow) > flowTolerance) {
-        warnings.push('Tank net flow is non-zero; pass-through readout indicates accumulation or depletion.');
+    const inventoryAdvisory = getTankInventoryAdvisory(netFlow, levelTrend);
+    if (inventoryAdvisory) {
+        advisories.push(inventoryAdvisory);
     }
 
     tank.results.connectedPipes = tankConnections.map(conn => conn.pipeId);
     tank.results.connectedSources = sourceFeedLinks.map(link => link.sourceId);
+    tank.results.sourceFeedFlows = sourceFeedFlows;
     tank.results.calculatedPressure = averageFiniteValues(sidePressures);
     tank.results.inletPressure = inletPressure;
     tank.results.outletPressure = outletPressure;
@@ -467,7 +552,8 @@ function updateTankPressureReadout(tankId) {
     tank.results.inletFlow = hasFlow ? Number(inletFlow.toFixed(3)) : null;
     tank.results.outletFlow = hasFlow ? Number(outletFlow.toFixed(3)) : null;
     tank.results.netFlow = Number.isFinite(netFlow) ? Number(netFlow.toFixed(3)) : null;
-    tank.results.sourceFeedFlow = sourceFeedFlow > 0 ? Number(sourceFeedFlow.toFixed(3)) : null;
+    tank.results.levelTrend = levelTrend;
+    tank.results.sourceFeedFlow = sourceFeedLinks.length > 0 ? Number(sourceFeedFlow.toFixed(3)) : null;
     tank.results.operatingPressureAbsolute = Number.isFinite(operatingPressureAbsolute) ? Number(operatingPressureAbsolute.toFixed(3)) : null;
     tank.results.operatingPressureGauge = Number.isFinite(operatingPressureGauge) ? Number(operatingPressureGauge.toFixed(3)) : null;
     tank.results.operatingPressureGaugeMbar = Number.isFinite(operatingPressureGauge) ? Number((operatingPressureGauge * 1000).toFixed(3)) : null;
@@ -487,8 +573,11 @@ function updateTankPressureReadout(tankId) {
     tank.results.ventingStatus = safety.status;
     tank.results.geometryStatus = safety.geometryStatus;
     tank.results.emergencyVentProvided = tank.props.emergencyVentProvided;
-    tank.results.status = warnings.length ? 'Review' : hydraulicStatus;
-    tank.results.warnings = warnings;
+    tank.results.status = warnings.length ? 'Review' : (advisories.length ? 'Advisory' : hydraulicStatus);
+    tank.results.warnings = [...warnings, ...advisories];
+    tank.results.calculationTrace = typeof buildTankCalculationTrace === 'function'
+        ? buildTankCalculationTrace(tank, fluid?.props || {}, tank.results)
+        : null;
 
     if (currentSelectedNode === tankId) {
         setSidebarReadout('tank-connected-pipes', tank.results.connectedPipes.join(', ') || '-', '');
@@ -501,7 +590,11 @@ function updateTankPressureReadout(tankId) {
         setSidebarReadout('tank-inlet-flow', tank.results.inletFlow, 'm3/h');
         setSidebarReadout('tank-outlet-flow', tank.results.outletFlow, 'm3/h');
         setSidebarReadout('tank-net-flow', tank.results.netFlow, 'm3/h');
+        setSidebarReadout('tank-level-trend', tank.results.levelTrend, '');
         setSidebarReadout('tank-source-feed-flow', tank.results.sourceFeedFlow, 'm3/h');
+        if (typeof setTankSourceFeedFlowBreakdownReadout === 'function') {
+            setTankSourceFeedFlowBreakdownReadout(tank.results.sourceFeedFlows);
+        }
         setSidebarReadout('tank-operating-abs-pressure', tank.results.operatingPressureAbsolute, 'bar a');
         setSidebarReadout('tank-hydraulic-status', tank.results.hydraulicStatus, '');
         setSidebarReadout('tank-vapor-pressure', tank.results.vaporPressure, 'bar a');
@@ -516,7 +609,10 @@ function updateTankPressureReadout(tankId) {
         setSidebarReadout('tank-venting-status', tank.results.ventingStatus, '');
         setSidebarReadout('tank-geometry-status', tank.results.geometryStatus, '');
         setSidebarReadout('tank-status', tank.results.status, '');
-        setSidebarReadout('tank-warnings', warnings.join(' | ') || 'OK', '');
+        setSidebarReadout('tank-warnings', tank.results.warnings.join(' | ') || 'OK', '');
+    }
+    if (typeof updateTankCalculationTraceReadout === 'function') {
+        updateTankCalculationTraceReadout(tank);
     }
 }
 
@@ -524,6 +620,189 @@ function updateAllTankReadouts() {
     Object.keys(globalModel).forEach(nodeId => {
         if (globalModel[nodeId]?.type === 'tank') {
             updateTankPressureReadout(nodeId);
+        }
+    });
+}
+
+function updateHeatExchangerReadout(exchangerId) {
+    const exchanger = globalModel[exchangerId];
+    if (!exchanger || exchanger.type !== 'heatExchanger') return;
+    ensureNodeResults(exchanger);
+
+    const trace = typeof buildHeatExchangerCalculationTrace === 'function'
+        ? buildHeatExchangerCalculationTrace(exchangerId, globalModel, connections)
+        : null;
+    exchanger.results.calculationTrace = trace;
+    if (trace?.hydraulic) {
+        exchanger.results.pressureDrop = trace.hydraulic.pressureDropBar;
+        exchanger.results.pressureDropHead = trace.hydraulic.pressureDropHead;
+        exchanger.results.flow = trace.hydraulic.flow;
+        exchanger.results.massFlow = trace.hydraulic.massFlowKgH;
+        exchanger.results.npshLossContribution = trace.hydraulic.npshLossContribution;
+    }
+    if (trace?.thermal) {
+        exchanger.results.duty = trace.thermal.dutyInput;
+        exchanger.results.inletTemp = trace.thermal.inletTemp;
+        exchanger.results.outletTemp = trace.thermal.outletTemp;
+        exchanger.results.deltaTemp = trace.thermal.deltaTemp;
+        exchanger.results.specificHeat = trace.thermal.specificHeat;
+        exchanger.results.calculatedDuty = trace.thermal.calculatedDuty;
+        exchanger.results.dutyResidual = trace.thermal.dutyResidual;
+    }
+    if (trace?.fluid) {
+        exchanger.results.density = trace.fluid.density;
+        exchanger.results.vaporPressure = trace.fluid.vaporPressure;
+    }
+    exchanger.results.status = trace?.status || '-';
+    exchanger.results.warnings = trace?.warnings || [];
+
+    if (currentSelectedNode === exchangerId) {
+        setSidebarReadout('hx-duty-input', exchanger.results.duty, 'kW');
+        setSidebarReadout('hx-pressure-drop', exchanger.results.pressureDrop, 'bar');
+        setSidebarReadout('hx-pressure-drop-head', exchanger.results.pressureDropHead, 'm');
+        setSidebarReadout('hx-inlet-temp', exchanger.results.inletTemp, 'deg C');
+        setSidebarReadout('hx-outlet-temp', exchanger.results.outletTemp, 'deg C');
+        setSidebarReadout('hx-delta-temp', exchanger.results.deltaTemp, 'deg C');
+        setSidebarReadout('hx-flow', exchanger.results.flow, 'm3/h');
+        setSidebarReadout('hx-mass-flow', exchanger.results.massFlow, 'kg/h');
+        setSidebarReadout('hx-calculated-duty', exchanger.results.calculatedDuty, 'kW');
+        setSidebarReadout('hx-duty-residual', exchanger.results.dutyResidual, 'kW');
+        setSidebarReadout('hx-density', exchanger.results.density, 'kg/m3');
+        setSidebarReadout('hx-specific-heat', exchanger.results.specificHeat, 'kJ/kg.K');
+        setSidebarReadout('hx-vapor-pressure', exchanger.results.vaporPressure, 'bar a');
+        setSidebarReadout('hx-npsh-loss-contribution', exchanger.results.npshLossContribution, 'm');
+    }
+
+    if (typeof updateHeatExchangerCalculationTraceReadout === 'function') {
+        updateHeatExchangerCalculationTraceReadout(exchangerId);
+    }
+}
+
+function updateAllHeatExchangerReadouts() {
+    Object.keys(globalModel).forEach(nodeId => {
+        if (globalModel[nodeId]?.type === 'heatExchanger') {
+            updateHeatExchangerReadout(nodeId);
+        }
+    });
+}
+
+function updateValveReadout(valveId) {
+    const valve = globalModel[valveId];
+    if (!valve || !['valve', 'checkValve'].includes(valve.type)) return;
+    ensureNodeResults(valve);
+
+    const trace = typeof buildValveCalculationTrace === 'function'
+        ? buildValveCalculationTrace(valveId, globalModel, connections)
+        : null;
+    valve.results.calculationTrace = trace;
+    if (trace?.hydraulic) {
+        valve.results.flow = trace.hydraulic.flow;
+        valve.results.density = trace.hydraulic.density;
+        valve.results.specificGravity = trace.hydraulic.specificGravity;
+        valve.results.diameter = trace.hydraulic.diameter;
+        valve.results.velocityHead = trace.hydraulic.velocityHead;
+        valve.results.headLoss = trace.hydraulic.headLoss;
+        valve.results.pressureDrop = trace.hydraulic.pressureDropBar;
+        valve.results.npshLossContribution = trace.hydraulic.npshLossContribution;
+        valve.results.effectiveCv = trace.hydraulic.effectiveCv;
+        valve.results.effectiveK = trace.hydraulic.effectiveK;
+        valve.results.crackingHead = valve.type === 'checkValve' ? trace.hydraulic.crackingHead : null;
+    }
+    valve.results.status = trace?.status || valve.results.status || '-';
+    valve.results.warnings = trace?.warnings || valve.results.warnings || [];
+
+    if (currentSelectedNode === valveId) {
+        setSidebarReadout('valve-flow', valve.results.flow, 'm3/h');
+        setSidebarReadout('valve-density', valve.results.density, 'kg/m3');
+        setSidebarReadout('valve-specific-gravity', valve.results.specificGravity, '');
+        setSidebarReadout('valve-diameter', valve.results.diameter, 'm');
+        setSidebarReadout('valve-velocity-head', valve.results.velocityHead, 'm');
+        setSidebarReadout('valve-head-loss', valve.results.headLoss, 'm');
+        setSidebarReadout('valve-pressure-drop', valve.results.pressureDrop, 'bar');
+        setSidebarReadout('valve-npsh-loss-contribution', valve.results.npshLossContribution, 'm');
+        setSidebarReadout('valve-effective-cv', valve.results.effectiveCv, '');
+        setSidebarReadout('valve-effective-k', valve.results.effectiveK, '');
+        setSidebarReadout('valve-cracking-head', valve.results.crackingHead, valve.type === 'checkValve' ? 'm' : '');
+    }
+
+    if (typeof updateValveCalculationTraceReadout === 'function') {
+        updateValveCalculationTraceReadout(valveId);
+    }
+}
+
+function updateAllValveReadouts() {
+    Object.keys(globalModel).forEach(nodeId => {
+        if (['valve', 'checkValve'].includes(globalModel[nodeId]?.type)) {
+            updateValveReadout(nodeId);
+        }
+    });
+}
+
+function updateSeparatorReadout(vesselId) {
+    const vessel = globalModel[vesselId];
+    if (!vessel || !['separator', 'verticalVessel'].includes(vessel.type)) return;
+    ensureNodeResults(vessel);
+
+    const trace = typeof buildSeparatorCalculationTrace === 'function'
+        ? buildSeparatorCalculationTrace(vesselId, globalModel, connections)
+        : null;
+    vessel.results.calculationTrace = trace;
+    if (trace?.boundary) {
+        vessel.results.operatingPressureAbsolute = trace.boundary.pressureAbsBar;
+        vessel.results.pressureDrop = trace.boundary.pressureDropBar;
+        vessel.results.pressureDropHead = trace.boundary.pressureDropHead;
+        vessel.results.baseElevation = trace.boundary.baseElevation;
+        vessel.results.liquidSurfaceElevation = trace.boundary.liquidSurfaceElevation;
+        vessel.results.inletNozzleElevation = trace.boundary.inletNozzleElevation;
+        vessel.results.outletNozzleElevation = trace.boundary.outletNozzleElevation;
+        vessel.results.outletSubmergence = trace.boundary.outletSubmergence;
+        vessel.results.flow = trace.boundary.flow;
+        vessel.results.holdupFlow = trace.boundary.holdupFlow;
+        vessel.results.holdupVolume = trace.boundary.holdupVolume;
+    }
+    if (trace?.flowBalance) {
+        vessel.results.connectedPipes = trace.flowBalance.connectedPipes || [];
+        vessel.results.connectedSources = trace.flowBalance.connectedSources || [];
+        vessel.results.sourceFeedFlows = trace.flowBalance.sourceFeedFlows || [];
+        vessel.results.hydraulicInletFlow = trace.flowBalance.hydraulicInletFlow;
+        vessel.results.hydraulicOutletFlow = trace.flowBalance.hydraulicOutletFlow;
+        vessel.results.sourceFeedFlow = trace.flowBalance.sourceFeedFlow;
+        vessel.results.inletFlow = trace.flowBalance.inletFlow;
+        vessel.results.outletFlow = trace.flowBalance.outletFlow;
+        vessel.results.netFlow = trace.flowBalance.netFlow;
+        vessel.results.levelTrend = trace.flowBalance.levelTrend;
+    }
+    vessel.results.status = trace?.status || '-';
+    vessel.results.warnings = trace?.warnings || [];
+
+    if (currentSelectedNode === vesselId) {
+        setSidebarReadout('vessel-absolute-pressure', vessel.results.operatingPressureAbsolute, 'bar a');
+        setSidebarReadout('vessel-pressure-drop', vessel.results.pressureDrop, 'bar');
+        setSidebarReadout('vessel-pressure-drop-head', vessel.results.pressureDropHead, 'm');
+        setSidebarReadout('vessel-base-elevation', vessel.results.baseElevation, 'm');
+        setSidebarReadout('vessel-liquid-surface-elevation', vessel.results.liquidSurfaceElevation, 'm');
+        setSidebarReadout('vessel-inlet-nozzle-elevation', vessel.results.inletNozzleElevation, 'm');
+        setSidebarReadout('vessel-outlet-nozzle-elevation', vessel.results.outletNozzleElevation, 'm');
+        setSidebarReadout('vessel-outlet-submergence', vessel.results.outletSubmergence, 'm');
+        setSidebarReadout('vessel-flow', vessel.results.flow, 'm3/h');
+        setSidebarReadout('vessel-hydraulic-inlet-flow', vessel.results.hydraulicInletFlow, 'm3/h');
+        setSidebarReadout('vessel-hydraulic-outlet-flow', vessel.results.hydraulicOutletFlow, 'm3/h');
+        setSidebarReadout('vessel-source-feed-flow', vessel.results.sourceFeedFlow, 'm3/h');
+        setSidebarReadout('vessel-inlet-flow', vessel.results.inletFlow, 'm3/h');
+        setSidebarReadout('vessel-outlet-flow', vessel.results.outletFlow, 'm3/h');
+        setSidebarReadout('vessel-net-flow', vessel.results.netFlow, 'm3/h');
+        setSidebarReadout('vessel-level-trend', vessel.results.levelTrend, '');
+        setSidebarReadout('vessel-holdup-volume', vessel.results.holdupVolume, 'm3');
+    }
+    if (typeof updateSeparatorCalculationTraceReadout === 'function') {
+        updateSeparatorCalculationTraceReadout(vesselId);
+    }
+}
+
+function updateAllSeparatorReadouts() {
+    Object.keys(globalModel).forEach(nodeId => {
+        if (['separator', 'verticalVessel'].includes(globalModel[nodeId]?.type)) {
+            updateSeparatorReadout(nodeId);
         }
     });
 }
@@ -586,7 +865,7 @@ function updateSinkReadout(sinkId) {
         && Number.isFinite(boundaryPressure)
         && boundaryPressure <= 0
     ) {
-        warnings.push('Outlet Pressure is 0 bar a/vacuum absolute; use 0 bar g or 1.013 bar a for atmospheric discharge.');
+        warnings.push('Outlet Pressure is 0 bar a/vacuum absolute; use 0 bar g or 1.01325 bar a for atmospheric discharge.');
     }
     if (Number.isFinite(selectedPressure) && Number.isFinite(vaporPressure) && selectedPressure <= vaporPressure) {
         warnings.push('Calculated outlet pressure is at or below fluid vapor pressure.');
@@ -698,6 +977,10 @@ function updateSimulation(options = {}) {
         if (typeof normalizeTankProps === 'function') normalizeTankProps(globalModel[tankId]);
         globalModel[tankId].props.vaporPressure = fluid.props.vaporPressure;
     });
+
+    if (typeof updateAllValveCompatibilityResults === 'function') {
+        updateAllValveCompatibilityResults(globalModel, connections, { syncDiameter: true });
+    }
 
     resetHydraulicPipeResults(globalModel);
     
@@ -879,7 +1162,13 @@ function updateSimulation(options = {}) {
 
     updateAllInstrumentReadouts();
     updateAllTankReadouts();
+    updateAllValveReadouts();
+    updateAllHeatExchangerReadouts();
+    updateAllSeparatorReadouts();
     updateAllSinkReadouts();
+    if (typeof updateAllSourceCalculationTraceReadouts === 'function') {
+        updateAllSourceCalculationTraceReadouts();
+    }
     if (typeof updateCanvasWarningPanel === 'function') {
         updateCanvasWarningPanel();
     }
