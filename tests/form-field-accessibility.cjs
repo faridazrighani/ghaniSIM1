@@ -4,6 +4,7 @@ const path = require('node:path');
 const projectRoot = path.resolve(__dirname, '..');
 const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
 const formFieldAccessibility = fs.readFileSync(path.join(projectRoot, 'ui/form-field-accessibility.js'), 'utf8');
+const minifiedBundle = fs.readFileSync(path.join(projectRoot, 'app.bundle.min.js'), 'utf8');
 const taskWindowSource = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
 const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
 
@@ -11,7 +12,8 @@ function assert(condition, message) {
     if (!condition) throw new Error(message);
 }
 
-assert(indexHtml.includes('ui/form-field-accessibility.js'), 'Index should load the form field accessibility normalizer');
+assert(indexHtml.includes('app.bundle.min.js'), 'Index should load the production application bundle');
+assert(minifiedBundle.includes('normalizeFormFieldAccessibility'), 'Production bundle should include the form field accessibility normalizer');
 assert(formFieldAccessibility.includes('normalizeFormFieldAccessibility'), 'Normalizer should expose a reusable function');
 assert(formFieldAccessibility.includes('MutationObserver'), 'Normalizer should handle dynamically rendered form fields');
 assert(formFieldAccessibility.includes('field.name = key'), 'Form fields should receive a name attribute');

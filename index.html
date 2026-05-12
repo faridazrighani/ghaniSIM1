@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Academic pump system modeling and simulation application for evaluating cavitation potential in centrifugal pumps based on NPSH analysis for various fluids.">
     <title>Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on NPSH Analysis for Various Fluids</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c4568'/%3E%3Cpath d='M8 22h16M10 16h12M12 10h8' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="style.css">
-    <script src="vendor/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="style.min.css">
 </head>
 <body>
 
@@ -99,7 +99,7 @@
         <div class="ribbon-divider"></div>
 
         <section class="academic-identity" aria-label="Thesis identity">
-            <img class="academic-logo" src="png/untirta-75.webp" alt="Sultan Ageng Tirtayasa University logo">
+            <img class="academic-logo" src="png/untirta-75.webp" width="56" height="56" alt="Sultan Ageng Tirtayasa University logo">
             <div class="academic-copy">
                 <div class="academic-university">Sultan Ageng Tirtayasa University &ndash; Mechanical Engineering</div>
                 <div class="academic-thesis" aria-label="Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on NPSH Analysis for Various Fluids.">
@@ -115,7 +115,7 @@
         <button class="ribbon-btn solve-ribbon-btn">
             <div class="ribbon-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                <img class="solve-mobile-logo" src="png/untirta-75.webp" alt="" aria-hidden="true">
+                <img class="solve-mobile-logo" src="png/untirta-75.webp" width="28" height="28" alt="" aria-hidden="true">
             </div>
             <span class="ribbon-label">Solve</span>
         </button>
@@ -167,15 +167,27 @@
     </div>
 
     <!-- Reusable Nonblocking Task Window -->
-    <section class="task-window" id="taskWindow" hidden role="dialog" aria-modal="false" aria-labelledby="taskWindowTitle">
+    <section class="task-window task-window-fluid-active" id="taskWindow" role="dialog" aria-modal="false" aria-labelledby="taskWindowTitle" aria-expanded="true" data-kind="fluid">
         <div class="task-window-header" id="taskWindowHeader">
-            <span id="taskWindowTitle">Task Window</span>
+            <span id="taskWindowTitle">Fluid Basis</span>
             <div class="task-window-actions">
                 <button class="task-window-minimize" id="taskWindowMinimize" type="button" aria-label="Minimize task window">_</button>
                 <button class="task-window-close" id="taskWindowClose" type="button" aria-label="Close task window">X</button>
             </div>
         </div>
-        <div class="task-window-body" id="taskWindowBody"></div>
+        <div class="task-window-body fluid-basis-task-body" id="taskWindowBody">
+            <div class="fluid-basis-task fluid-basis-lcp-shell">
+                <div class="fluid-basis-grid">
+                    <section class="fluid-input-card">
+                        <h3>Input Basis</h3>
+                        <div class="fluid-basis-setup-notice">
+                            <strong>Set calculation basis first</strong>
+                            <span>Set Fluid Basis and Unit Standard before adding equipment.</span>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
     </section>
 
     <section class="tablet-fluid-bottom-dock" id="tabletFluidBottomDock" hidden aria-label="Fluid basis calculation explanation"></section>
@@ -209,45 +221,6 @@
         </div>
     </div>
 
-    <script src="formulas/constants.js"></script>
-    <script src="core/unit-system.js"></script>
-    <script src="properties/objects/tank-properties.js"></script>
-    <script src="properties/objects/pipe-properties.js"></script>
-    <script src="properties/objects/pump-properties.js"></script>
-    <script src="properties/objects/valve-properties.js"></script>
-    <script src="properties/objects/separator-properties.js"></script>
-    <script src="properties/objects/heat-exchanger-properties.js"></script>
-    <script src="properties/objects/mixer-properties.js"></script>
-    <script src="properties/objects/instrument-properties.js"></script>
-    <script src="properties/objects/network-node-properties.js"></script>
-    <script src="properties/object-properties.js"></script>
-    <script src="formulas/fluids/common-fluid-formulas.js"></script>
-    <script src="formulas/fluids/water-formulas.js"></script>
-    <script src="formulas/fluids/methanol-formulas.js"></script>
-    <script src="formulas/fluids/palm-oil-formulas.js"></script>
-    <script src="formulas/fluids/crude-oil-formulas.js"></script>
-    <script src="formulas/objects/pump-formulas.js"></script>
-    <script src="formulas/objects/pipe-formulas.js"></script>
-    <script src="formulas/objects/tank-formulas.js"></script>
-    <script src="formulas/objects/valve-formulas.js"></script>
-    <script src="formulas/objects/check-valve-formulas.js"></script>
-    <script src="formulas/objects/separator-formulas.js"></script>
-    <script src="formulas/objects/heat-exchanger-formulas.js"></script>
-    <script src="formulas/objects/mixer-formulas.js"></script>
-    <script src="formulas/objects/hydraulic-network-formulas.js"></script>
-    <script src="formulas/objects/instrument-formulas.js"></script>
-    <script src="formulas/objects/network-node-formulas.js"></script>
-    <script src="toolbar/toolbar-catalog.js"></script>
-    <script src="core/default-state.js"></script>
-    <script src="toolbar/menu-bar.js"></script>
-    <script src="core/state-manager.js"></script>
-    <script src="core/simulation-engine.js"></script>
-    <script src="ui/sidebar-properties.js"></script>
-    <script src="ui/task-window.js"></script>
-    <script src="ui/connections-renderer.js"></script>
-    <script src="ui/context-menu.js"></script>
-    <script src="ui/canvas-manager.js"></script>
-    <script src="ui/form-field-accessibility.js"></script>
-    <script src="app.js"></script>
+    <script defer src="app.bundle.min.js"></script>
 </body>
 </html>

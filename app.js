@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initMenuBar();
     if (typeof initTaskWindow === 'function') initTaskWindow();
     if (typeof initCanvasWarningPanelWindow === 'function') initCanvasWarningPanelWindow();
-    initializeChart(); // Pump performance chart modal
 
     const canvas = document.getElementById('canvas');
     if (canvas) {
@@ -131,20 +130,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (globalModel["FLUID"] && globalModel["FLUID"].props.fluidName === 'Water') {
         updateWaterProperties();
     }
-    
-    // Give DOM time to render before drawing initial lines
-    setTimeout(() => {
+
+    const basisConfirmedAtStartup = typeof isBasisConfirmed === 'function' && isBasisConfirmed();
+    if (!basisConfirmedAtStartup && typeof openFluidBasisTaskWindow === 'function') {
+        openFluidBasisTaskWindow({
+            setupRequired: true,
+            reason: 'Set Fluid Basis and Unit Standard before adding equipment.'
+        });
+    }
+
+    // Defer non-critical startup work so the initial Fluid Basis notice can paint first.
+    requestAnimationFrame(() => window.setTimeout(() => {
         updateSimulation();
         drawConnections();
-        if (typeof isBasisConfirmed === 'function' && !isBasisConfirmed()) {
-            if (typeof openFluidBasisTaskWindow === 'function') {
-                openFluidBasisTaskWindow({
-                    setupRequired: true,
-                    reason: 'Set Fluid Basis and Unit Standard before adding equipment.'
-                });
-            }
-        } else if (typeof openAboutDialog === 'function') {
+        if (basisConfirmedAtStartup && typeof openAboutDialog === 'function') {
             openAboutDialog();
         }
-    }, 100);
+    }, 0));
 });

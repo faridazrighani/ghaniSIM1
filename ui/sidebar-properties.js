@@ -2560,9 +2560,37 @@ function renderSidebar(nodeId) {
     }
 }
 
+let chartJsLoadPromise = null;
+
+function loadChartJsOnDemand() {
+    if (window.Chart) return Promise.resolve(window.Chart);
+    if (chartJsLoadPromise) return chartJsLoadPromise;
+
+    chartJsLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'vendor/chart.umd.min.js';
+        script.async = true;
+        script.onload = () => {
+            if (window.Chart) {
+                resolve(window.Chart);
+            } else {
+                reject(new Error('Chart.js loaded without exposing Chart.'));
+            }
+        };
+        script.onerror = () => reject(new Error('Unable to load Chart.js.'));
+        document.head.appendChild(script);
+    });
+
+    return chartJsLoadPromise;
+}
+
 // Modal Chart Init
-function initializeChart() {
-    const ctx = document.getElementById('pumpChart').getContext('2d');
+async function initializeChart() {
+    if (pumpChartInstance) return pumpChartInstance;
+    await loadChartJsOnDemand();
+    const chartCanvas = document.getElementById('pumpChart');
+    if (!chartCanvas) return null;
+    const ctx = chartCanvas.getContext('2d');
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
     
     pumpChartInstance = new Chart(ctx, {
@@ -2582,6 +2610,12 @@ function initializeChart() {
             }
         }
     });
+    return pumpChartInstance;
+}
+
+async function ensurePumpChartReady() {
+    if (pumpChartInstance) return pumpChartInstance;
+    return initializeChart();
 }
 
 // Modal Drag

@@ -66,6 +66,7 @@ textarea {
     display: flex;
     gap: 16px;
     padding: 6px 12px;
+    min-height: 37px;
     font-size: 13px;
     color: #444;
     border-bottom: 1px solid var(--border-color);
@@ -287,6 +288,7 @@ textarea {
 .ribbon {
     display: flex;
     padding: 4px 12px;
+    min-height: 74px;
     background-color: var(--ribbon-bg);
     border-bottom: 1px solid var(--border-color);
     gap: 8px;
@@ -478,6 +480,7 @@ textarea {
     gap: 8px;
     overflow-x: auto;
     padding-bottom: 2px;
+    min-height: 59px;
     min-width: 0;
     flex: 0 1 auto;
     scrollbar-width: thin;
@@ -497,7 +500,7 @@ textarea {
 }
 
 .toolbar-group-title {
-    color: #66788a;
+    color: #334155;
     font-size: 10px;
     font-weight: 700;
     text-align: center;
@@ -3959,6 +3962,7 @@ select.prop-input-field {
         font-size: 12px;
         gap: 12px;
         padding: 5px 8px;
+        min-height: 32px;
     }
 
     .basis-status-pill.basis-status-confirmed-clean {
@@ -3967,6 +3971,7 @@ select.prop-input-field {
 
     .ribbon {
         gap: 6px;
+        min-height: 68px;
     }
 
     .ribbon-divider {
@@ -3998,6 +4003,10 @@ select.prop-input-field {
 
     .toolbar-group {
         padding: 0 3px;
+    }
+
+    .toolbar-palette {
+        min-height: 53px;
     }
 
     .toolbar-tool {
@@ -4503,6 +4512,7 @@ select.prop-input-field {
 
     .ribbon {
         padding: 2px 8px;
+        min-height: 54px;
     }
 
     .academic-identity,
@@ -4526,6 +4536,10 @@ select.prop-input-field {
 
     .toolbar-tool {
         width: 50px;
+        min-height: 42px;
+    }
+
+    .toolbar-palette {
         min-height: 42px;
     }
 
