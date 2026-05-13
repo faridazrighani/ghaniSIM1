@@ -4,9 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Academic pump system modeling and simulation application for evaluating cavitation potential in centrifugal pumps based on NPSH analysis for various fluids.">
+    <link rel="canonical" href="https://faridazrighani.github.io/ghaniSIM1/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="GhaniSIM1">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:title" content="NPSH-Based Cavitation Analysis for Centrifugal Pump Systems">
+    <meta property="og:description" content="Academic pump system modeling and simulation application for evaluating cavitation potential in centrifugal pumps based on NPSH analysis for various fluids.">
+    <meta property="og:url" content="https://faridazrighani.github.io/ghaniSIM1/">
+    <meta property="og:image" content="https://faridazrighani.github.io/ghaniSIM1/png/NPSH-Based-Cavitation-Analysis-for-Centrifugal-Pump-Systems.png">
+    <meta property="og:image:secure_url" content="https://faridazrighani.github.io/ghaniSIM1/png/NPSH-Based-Cavitation-Analysis-for-Centrifugal-Pump-Systems.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="100">
+    <meta property="og:image:height" content="125">
+    <meta property="og:image:alt" content="NPSH-based cavitation analysis preview for centrifugal pump systems">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="NPSH-Based Cavitation Analysis for Centrifugal Pump Systems">
+    <meta name="twitter:description" content="Academic pump system modeling and simulation application for evaluating cavitation potential in centrifugal pumps based on NPSH analysis for various fluids.">
+    <meta name="twitter:image" content="https://faridazrighani.github.io/ghaniSIM1/png/NPSH-Based-Cavitation-Analysis-for-Centrifugal-Pump-Systems.png">
+    <meta name="twitter:image:alt" content="NPSH-based cavitation analysis preview for centrifugal pump systems">
     <title>Modeling and Simulation of a Pumping System for Evaluating Cavitation Potential in Centrifugal Pumps Based on NPSH Analysis for Various Fluids</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231c4568'/%3E%3Cpath d='M8 22h16M10 16h12M12 10h8' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="style.min.css">
+    <style>
+        :root{--bg-canvas:#f4f7f9;--grid-line:#dce4eb;--panel-bg:#fff;--border-color:#e0e0e0;--header-blue:#1c4568;--ribbon-bg:#f9f9f9;--ribbon-hover:#e6f0fa;--ribbon-active-border:#b3d4f5;--text-main:#333;--font-main:'Segoe UI',system-ui,-apple-system,sans-serif}
+        *{box-sizing:border-box;margin:0;padding:0}
+        html{width:100%;height:100%}
+        body{width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:var(--panel-bg);color:var(--text-main);font-family:var(--font-main)}
+        button,input,select,textarea{font:inherit}
+        .menu-bar{display:flex;gap:16px;min-height:37px;flex:0 0 auto;padding:6px 12px;border-bottom:1px solid var(--border-color);color:#444;font-size:13px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+        .menu-dropdown,.menu-item{flex:0 0 auto}.menu-dropdown{position:relative;display:inline-block}.menu-item{padding:2px 4px;border-radius:3px;cursor:pointer}
+        .dropdown-content,.dropdown-submenu-content{display:none}
+        .ribbon{display:flex;align-items:center;gap:8px;min-height:74px;flex:0 0 auto;padding:4px 12px;border-bottom:1px solid var(--border-color);background:var(--ribbon-bg);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+        .ribbon-btn{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:60px;padding:6px 12px;border:1px solid transparent;border-radius:4px;background:transparent;color:#333;cursor:pointer}
+        .ribbon-btn[hidden],.ribbon-divider[hidden]{display:none!important}.ribbon-icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center}.ribbon-label{color:#333;font-size:11px}
+        .basis-status-pill{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-width:180px;max-width:260px;padding:6px 10px;border:1px solid #f2c94c;border-radius:6px;background:#fff8dc;color:#17395a;font-size:11px;line-height:1.2;text-align:left;cursor:pointer}
+        .basis-status-pill span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ribbon-divider{width:1px;height:30px;flex:0 0 1px;margin:0 4px;background:var(--border-color)}
+        .toolbar-palette{display:flex;align-items:stretch;gap:8px;min-width:0;min-height:59px;flex:0 1 auto;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}.toolbar-group{flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:0 4px;border-right:1px solid var(--border-color)}.toolbar-group:last-child{border-right:0}.toolbar-group-title{color:#334155;font-size:10px;font-weight:700;line-height:1;text-align:center}.toolbar-tools{display:flex;gap:4px}.toolbar-tool{width:54px;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px;border:1px solid transparent;border-radius:4px;background:transparent;color:#333;font-size:10px;cursor:pointer}.toolbar-tool-icon{width:26px;height:22px;display:block;object-fit:contain}.toolbar-tool span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .academic-identity{flex:0 0 clamp(500px,30vw,560px);min-width:500px;max-width:560px;margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:3px 8px;overflow:hidden;color:#5c1b0f}.academic-logo{width:56px;height:56px;flex:0 0 56px;object-fit:contain}.academic-copy{min-width:0;display:flex;flex-direction:column;gap:2px;line-height:1.12}.academic-university{color:#b74716;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.academic-thesis{display:flex;flex-direction:column;gap:1px;max-width:100%;overflow:hidden;color:#6f2b1d;font-size:10px;font-weight:600}.academic-thesis-line,.academic-author{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.academic-author{color:#4c1d14;font-size:10px;font-weight:800}.solve-ribbon-btn{border:1px solid #c3e6cb;background:#d4edda}.solve-mobile-logo{display:none;width:28px;height:28px;object-fit:contain}
+        .main-workspace{display:flex;flex:1;min-width:0;min-height:0;overflow:hidden}.pfd-canvas{position:relative;flex:1;min-width:0;min-height:0;overflow:auto;background-color:var(--bg-canvas);background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);background-size:20px 20px;touch-action:pan-x pan-y;overscroll-behavior:contain}.pfd-canvas:after{content:"";display:block;width:max(100%,1200px);height:max(100%,760px);pointer-events:none}.pfd-lines{position:absolute;top:0;left:0;width:max(100%,1200px);height:max(100%,760px);pointer-events:none}
+        .canvas-status-legend,.canvas-warning-panel{position:absolute;z-index:70;border:1px solid rgba(148,163,184,.5);background:rgba(255,255,255,.94);box-shadow:0 4px 12px rgba(15,23,42,.12)}.canvas-status-legend{top:12px;right:12px;width:142px;padding:8px 10px;border-radius:6px;pointer-events:none}.canvas-overlay-title{margin-bottom:5px;color:#334155;font-size:11px;font-weight:700;line-height:1.2}.canvas-legend-row{display:flex;align-items:center;gap:7px;min-height:18px;color:#334155;font-size:11px;line-height:1.2}.status-dot{width:9px;height:9px;flex:0 0 9px;border-radius:50%;box-shadow:0 0 0 1px rgba(15,23,42,.1)}.status-safe{background:#16a34a}.status-warning{background:#f97316}.status-risk{background:#dc2626}.status-incomplete{background:#94a3b8}.canvas-warning-panel{top:126px;right:12px;width:min(292px,calc(100% - 24px));min-width:min(220px,calc(100% - 24px));max-width:calc(100% - 24px);max-height:min(320px,calc(100% - 24px));display:flex;flex-direction:column;border-color:rgba(28,69,104,.58);border-radius:6px;overflow:hidden;box-shadow:0 12px 28px rgba(15,23,42,.18)}.canvas-warning-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(226,232,240,.9);background:#123b5a;color:#fff;font-size:11px;font-weight:700;line-height:1.2}.canvas-warning-count{min-width:20px;text-align:center}.canvas-warning-list{overflow:auto;background:#fff}.canvas-warning-empty{padding:10px;color:#64748b;font-size:11px}
+        .full-editor-modal{display:none}.task-window{position:fixed;right:18px;top:112px;z-index:1400;width:min(720px,calc(100vw - 36px));height:min(640px,calc(100dvh - 128px));max-width:calc(100vw - 16px);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(28,69,104,.8);border-radius:8px;background:#fff;box-shadow:0 18px 46px rgba(15,23,42,.24);transform:none}.task-window[hidden]{display:none!important}.task-window-header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px;padding:8px 10px 8px 14px;background:#123b5a;color:#fff}.task-window-header span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:700}.task-window-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto}.task-window-close,.task-window-minimize{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border:0;border-radius:4px;background:transparent;color:#fff;font-weight:700;line-height:1;cursor:pointer}.task-window-body{flex:1 1 auto;min-width:0;min-height:0;max-width:100%;overflow-x:hidden;overflow-y:auto;padding:14px;background:#f6f8fb;word-break:break-word}.fluid-basis-task{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%}.fluid-basis-grid{display:grid;grid-template-columns:minmax(300px,.92fr) minmax(340px,1.08fr);gap:12px;min-width:0}.fluid-input-card{min-width:0;max-width:100%;overflow:hidden;border:1px solid #d8e6f2;border-radius:8px;background:#fff}.fluid-input-card h3{margin:0;padding:10px 12px;border-bottom:1px solid #edf2f7;background:#eef6fc;color:#123b5a;font-size:13px;line-height:1.2}.fluid-basis-setup-notice{display:flex;flex-direction:column;gap:4px;margin:10px 12px 0;padding:10px 12px;border:1px solid #f2c94c;border-radius:6px;background:#fff8dc;color:#5f4200;font-size:12px;line-height:1.35}
+        @media (max-width:1180px){.toolbar-tool{width:50px}.academic-identity{flex-basis:500px;min-width:360px}.academic-logo{width:48px;height:48px;flex-basis:48px}.academic-thesis,.academic-author{font-size:9.5px}}
+        @media (max-width:900px){.menu-bar{min-height:34px;padding:5px 10px;gap:14px}.ribbon{padding:4px 8px}.academic-identity{flex-basis:360px;min-width:300px;max-width:420px;gap:8px}.academic-logo{width:40px;height:40px;flex-basis:40px}.academic-thesis{font-size:9px}.task-window:not(.task-window-minimized){left:14px;right:auto;top:14px;bottom:auto;width:calc(100vw - 28px);height:min(74dvh,calc(100dvh - 28px));max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);transform:none}.fluid-basis-grid{grid-template-columns:1fr}}
+        @media (max-width:720px){.main-workspace{flex-direction:column;flex:1 1 auto;min-height:0}.canvas-status-legend{display:none}.pfd-canvas{flex:1 1 280px;min-height:220px}}
+        @media (max-width:640px){.menu-bar{min-height:32px;padding:5px 8px;gap:12px;font-size:12px}.ribbon{gap:6px;min-height:68px}.ribbon-divider,.academic-identity,.academic-solve-divider{display:none}.ribbon-btn{min-width:52px;padding:5px 8px}.solve-ribbon-btn .ribbon-icon svg{display:none}.solve-ribbon-btn .solve-mobile-logo{display:block}.solve-ribbon-btn .ribbon-icon{width:30px;height:30px}.toolbar-palette{min-height:53px}.toolbar-tool{width:48px;min-height:46px}.toolbar-tool-icon{width:24px;height:21px}.pfd-canvas{flex-basis:260px;min-height:200px;background-size:16px 16px}.canvas-warning-panel{top:8px;left:8px;right:auto;width:min(260px,calc(100% - 16px));min-width:min(220px,calc(100% - 16px));max-width:calc(100% - 16px);max-height:170px}.task-window:not(.task-window-minimized){left:8px;right:8px;top:auto;bottom:8px;width:calc(100vw - 16px);max-width:calc(100vw - 16px);height:min(82dvh,640px);max-height:calc(100dvh - 16px);border-radius:10px;transform:none}}
+    </style>
+    <link rel="preload" href="style.min.css" as="style">
+    <link rel="stylesheet" href="style.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="style.min.css"></noscript>
 </head>
 <body>
 
@@ -94,7 +138,38 @@
 
         <div class="ribbon-divider"></div>
         
-        <div class="toolbar-palette" id="toolbarPalette"></div>
+        <div class="toolbar-palette" id="toolbarPalette">
+            <div class="toolbar-group">
+                <div class="toolbar-group-title">Equipment</div>
+                <div class="toolbar-tools">
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Pump" aria-label="Add Pump"><img class="toolbar-tool-icon" src="toolbar/icons/pump.svg" width="26" height="22" alt=""><span>Pump</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Tank" aria-label="Add Tank"><img class="toolbar-tool-icon" src="toolbar/icons/tank.svg" width="26" height="22" alt=""><span>Tank</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Vessel H" aria-label="Add Vessel H"><img class="toolbar-tool-icon" src="toolbar/icons/vessel.svg" width="26" height="22" alt=""><span>Vessel H</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Vessel V" aria-label="Add Vessel V"><img class="toolbar-tool-icon" src="toolbar/icons/vertical-vessel.svg" width="26" height="22" alt=""><span>Vessel V</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Exchanger" aria-label="Add Exchanger"><img class="toolbar-tool-icon" src="toolbar/icons/heat-exchanger.svg" width="26" height="22" alt=""><span>Exchang...</span></button>
+                </div>
+            </div>
+            <div class="toolbar-group">
+                <div class="toolbar-group-title">Piping</div>
+                <div class="toolbar-tools">
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Valve" aria-label="Add Valve"><img class="toolbar-tool-icon" src="toolbar/icons/valve.svg" width="26" height="22" alt=""><span>Valve</span></button>
+                </div>
+            </div>
+            <div class="toolbar-group">
+                <div class="toolbar-group-title">PIPESIM</div>
+                <div class="toolbar-tools">
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Source" aria-label="Add Source"><img class="toolbar-tool-icon" src="toolbar/icons/source.svg" width="26" height="22" alt=""><span>Source</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="Sink" aria-label="Add Sink"><img class="toolbar-tool-icon" src="toolbar/icons/sink.svg" width="26" height="22" alt=""><span>Sink</span></button>
+                </div>
+            </div>
+            <div class="toolbar-group">
+                <div class="toolbar-group-title">Instruments</div>
+                <div class="toolbar-tools">
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="PTF" aria-label="Add PTF"><img class="toolbar-tool-icon" src="toolbar/icons/line-monitor.svg" width="26" height="22" alt=""><span>PTF</span></button>
+                    <button type="button" class="toolbar-tool toolbar-tool-draggable" title="LIC" aria-label="Add LIC"><img class="toolbar-tool-icon" src="toolbar/icons/level-controller.svg" width="26" height="22" alt=""><span>LIC</span></button>
+                </div>
+            </div>
+        </div>
 
         <div class="ribbon-divider"></div>
 
@@ -112,7 +187,7 @@
 
         <div class="ribbon-divider academic-solve-divider"></div>
         
-        <button class="ribbon-btn solve-ribbon-btn">
+        <button class="ribbon-btn solve-ribbon-btn" id="btn-solve" type="button" aria-label="Run hydraulic and NPSH evaluation" title="Run hydraulic and NPSH evaluation">
             <div class="ribbon-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#28a745" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 <img class="solve-mobile-logo" src="png/untirta-75.webp" width="28" height="28" alt="" aria-hidden="true">

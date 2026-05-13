@@ -159,6 +159,118 @@ function updatePumpStatusBadge(el, visualStatus) {
     badge.classList.add(`pump-status-badge-${visualStatus}`);
 }
 
+function isPumpLiveResultAvailable(node) {
+    if (!node || node.type !== 'pump') return false;
+    const status = String(node.results?.status || '').trim().toLowerCase();
+    const cavitationStatus = String(node.results?.cavitationStatus || '').trim().toLowerCase();
+    if (!cavitationStatus || cavitationStatus === '-') return false;
+    return !(
+        status.includes('incomplete')
+        || status.includes('invalid')
+        || status.includes('no operating')
+        || cavitationStatus.includes('incomplete')
+        || cavitationStatus.includes('unknown')
+        || cavitationStatus === '-'
+    );
+}
+
+function getPumpLiveDisplayUnit(quantity, options = {}) {
+    if (typeof getDisplayUnit === 'function') return getDisplayUnit(quantity, options);
+    if (quantity === 'flow') return 'm3/h';
+    if (quantity === 'pressureAbs') return 'bar a';
+    if (quantity === 'head') return 'm';
+    return options.unit || '';
+}
+
+function formatPumpLiveNumber(value, digits = 1, options = {}) {
+    const number = parseFloat(value);
+    if (!Number.isFinite(number)) return '-';
+    const abs = Math.abs(number);
+    const formatted = abs > 0 && abs < 0.001
+        ? number.toExponential(2)
+        : number.toFixed(digits);
+    return options.showSign && number > 0 ? `+${formatted}` : formatted;
+}
+
+function getPumpLiveDisplayValue(value, quantity, digits = 1, options = {}) {
+    const number = parseFloat(value);
+    if (!Number.isFinite(number)) return '-';
+    const displayValue = typeof convertToDisplay === 'function'
+        ? convertToDisplay(number, quantity)
+        : number;
+    return formatPumpLiveNumber(displayValue, digits, options);
+}
+
+function getPumpLiveVaporPressureBasis() {
+    const vaporPressure = parseFloat(globalModel.FLUID?.props?.vaporPressure);
+    return Number.isFinite(vaporPressure) ? vaporPressure : null;
+}
+
+function buildPumpLiveParameterRows(node) {
+    const solved = isPumpLiveResultAvailable(node);
+    const results = node.results || {};
+    const flowUnit = getPumpLiveDisplayUnit('flow');
+    const headUnit = getPumpLiveDisplayUnit('head');
+    const vaporPressureUnit = getPumpLiveDisplayUnit('pressureAbs');
+    const basisVaporPressure = Number.isFinite(parseFloat(results.vaporPressureBasis))
+        ? parseFloat(results.vaporPressureBasis)
+        : getPumpLiveVaporPressureBasis();
+    const liveVaporPressure = parseFloat(results.vaporPressureLive);
+    const solvedValue = (key, quantity, digits = 1, options = {}) => (
+        solved ? getPumpLiveDisplayValue(results[key], quantity, digits, options) : '-'
+    );
+    const pressureValue = (value) => getPumpLiveDisplayValue(value, 'pressureAbs', 3);
+
+    return [
+        { label: 'Q', title: 'Operating flow rate', value: solvedValue('flow', 'flow', 1), unit: flowUnit },
+        { label: 'H', title: 'Pump head', value: solvedValue('head', 'head', 1), unit: headUnit },
+        { label: 'NPSHa', title: 'Available NPSH', value: solvedValue('npsha', 'head', 1), unit: headUnit },
+        { label: 'NPSHr', title: 'Required NPSH', value: solvedValue('npshr', 'head', 1), unit: headUnit },
+        { label: 'M', title: 'NPSH margin', value: solvedValue('npshMargin', 'head', 1, { showSign: true }), unit: headUnit },
+        { label: 'R', title: 'NPSH ratio', value: solved ? formatPumpLiveNumber(results.npshRatio, 2) : '-', unit: '' },
+        { label: 'PvB', title: 'Fluid Basis vapor pressure', value: pressureValue(basisVaporPressure), unit: vaporPressureUnit },
+        { label: 'PvP', title: 'Live pump vapor pressure used in NPSH', value: solved ? pressureValue(liveVaporPressure) : '-', unit: vaporPressureUnit }
+    ];
+}
+
+function updatePumpLiveParameterPanel(el, node, visualStatus) {
+    const panel = el.querySelector('.pump-live-params');
+    if (!panel) return;
+
+    panel.classList.remove(
+        'pump-live-params-safe',
+        'pump-live-params-warning',
+        'pump-live-params-risk',
+        'pump-live-params-incomplete'
+    );
+    if (visualStatus !== 'normal') {
+        panel.classList.add(`pump-live-params-${visualStatus}`);
+    }
+
+    const rows = buildPumpLiveParameterRows(node);
+    panel.replaceChildren();
+    rows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'pump-live-param-row';
+        item.title = row.title;
+
+        const label = document.createElement('span');
+        label.className = 'pump-live-param-label';
+        label.textContent = row.label;
+
+        const value = document.createElement('strong');
+        value.className = 'pump-live-param-value';
+        value.textContent = row.value;
+
+        const unit = document.createElement('span');
+        unit.className = 'pump-live-param-unit';
+        unit.textContent = row.value === '-' ? '' : row.unit;
+
+        item.append(label, value, unit);
+        panel.appendChild(item);
+    });
+}
+
 function getGenericNodeWarnings(node) {
     return Array.isArray(node?.results?.warnings)
         ? node.results.warnings.filter(Boolean)
@@ -376,7 +488,6 @@ function initCanvasWarningPanelWindow() {
     window.addEventListener('orientationchange', requestCanvasWarningPanelViewportClamp);
 
     panel.dataset.windowInitialized = 'true';
-    requestAnimationFrame(positionCanvasWarningPanelDefault);
 }
 
 function updateCanvasWarningPanel() {
@@ -386,7 +497,6 @@ function updateCanvasWarningPanel() {
     if (!panel || !list || !count) return;
 
     initCanvasWarningPanelWindow();
-    positionCanvasWarningPanelDefault();
 
     const summaries = Object.entries(globalModel)
         .map(([nodeId, node]) => getEquipmentWarningSummary(nodeId, node))
@@ -446,6 +556,7 @@ function updateObjectOperatingStatusVisual(nodeId) {
         el.dataset.operatingStatus = visualStatus;
         el.title = getPumpOperatingStatusTooltip(node, visualStatus);
         updatePumpStatusBadge(el, visualStatus);
+        updatePumpLiveParameterPanel(el, node, visualStatus);
         return;
     }
 
@@ -661,6 +772,9 @@ function getObjectMarkup(type, nodeId, desc) {
     const statusBadge = type === 'pump'
         ? '<div class="pump-status-badge" hidden></div>'
         : '';
+    const pumpLivePanel = type === 'pump'
+        ? '<div class="pump-live-params" aria-label="Live pump parameters"></div>'
+        : '';
 
     return `
         <div class="object-icon">
@@ -669,6 +783,7 @@ function getObjectMarkup(type, nodeId, desc) {
         </div>
         ${statusBadge}
         <div class="object-name">${safeNodeId}<br><span class="object-desc">${safeDesc}</span></div>
+        ${pumpLivePanel}
         ${type === 'lineMonitor' ? getLineMonitorReadoutMarkup() : ''}
     `;
 }
@@ -1564,6 +1679,11 @@ function addEquipment(type, placement = null, options = {}) {
     selectNode(newId, objDiv);
     minimizeObjectTaskWindowAfterEquipmentAdd(newId);
     setAppMode('SELECT');
+    if (typeof updateSimulation === 'function') {
+        updateSimulation({ renderSidebarAfter: false });
+    } else if (typeof updateAllObjectOperatingStatusVisuals === 'function') {
+        updateAllObjectOperatingStatusVisuals();
+    }
 
     return newId;
 }

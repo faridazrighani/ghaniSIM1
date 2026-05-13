@@ -2,6 +2,17 @@
  * Modern Process Simulator - Main Entry Point (Bootstrap)
  */
 
+function runUserRequestedSolve() {
+    if (typeof updateSimulation === 'function') updateSimulation();
+    if (typeof drawConnections === 'function') drawConnections();
+    if (typeof updateAllObjectOperatingStatusVisuals === 'function') {
+        updateAllObjectOperatingStatusVisuals();
+    }
+    if (typeof activeChartPumpId !== 'undefined' && activeChartPumpId && typeof updatePumpChart === 'function') {
+        updatePumpChart(activeChartPumpId);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // 1. Initialize core components
     initMenuBar();
@@ -30,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSelect = document.getElementById('btn-mode-select');
     const btnConnect = document.getElementById('btn-mode-connect');
     const btnFluidBasis = document.getElementById('btn-fluid-basis');
+    const btnSolve = document.getElementById('btn-solve');
     
     if (btnSelect) {
         btnSelect.addEventListener('click', () => setAppMode('SELECT'));
@@ -45,6 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const basisStatusPill = document.getElementById('basisStatusPill');
     if (basisStatusPill) {
         basisStatusPill.addEventListener('click', () => openFluidBasis());
+    }
+
+    if (btnSolve) {
+        btnSolve.addEventListener('click', runUserRequestedSolve);
     }
 
     // 5. Canvas Event Listeners

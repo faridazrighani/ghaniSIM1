@@ -219,22 +219,39 @@ function minifyCss(source) {
     .trim();
 }
 
-async function minifyJavaScriptWithTerser(source) {
-  const response = await fetch('https://cdn.jsdelivr.net/npm/terser@5.37.0/dist/bundle.min.js');
-  if (!response.ok) {
-    throw new Error(`Unable to fetch Terser: HTTP ${response.status}`);
+function createSourceMapFallback(sourceFiles) {
+  return JSON.stringify({
+    version: 3,
+    file: 'app.bundle.min.js',
+    sources: jsSources,
+    sourcesContent: jsSources.map((sourcePath) => sourceFiles[sourcePath]),
+    names: [],
+    mappings: ''
+  });
+}
+
+async function minifyJavaScriptWithTerser(sourceFiles) {
+  const sourceMapResponse = await fetch('https://cdn.jsdelivr.net/npm/source-map@0.7.4/dist/source-map.js');
+  if (!sourceMapResponse.ok) {
+    throw new Error(`Unable to fetch source-map: HTTP ${sourceMapResponse.status}`);
+  }
+
+  const terserResponse = await fetch('https://cdn.jsdelivr.net/npm/terser@5.37.0/dist/bundle.min.js');
+  if (!terserResponse.ok) {
+    throw new Error(`Unable to fetch Terser: HTTP ${terserResponse.status}`);
   }
 
   const sandbox = { globalThis: {}, self: {}, window: {} };
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
   sandbox.window = sandbox;
-  vm.runInNewContext(await response.text(), sandbox);
+  vm.runInNewContext(await sourceMapResponse.text(), sandbox);
+  vm.runInNewContext(await terserResponse.text(), sandbox);
   if (!sandbox.Terser?.minify) {
     throw new Error('Terser browser bundle did not expose a minify function');
   }
 
-  const result = await sandbox.Terser.minify(source, {
+  const result = await sandbox.Terser.minify(sourceFiles, {
     compress: {
       passes: 2
     },
@@ -242,30 +259,44 @@ async function minifyJavaScriptWithTerser(source) {
     format: {
       comments: false,
       ascii_only: true
+    },
+    sourceMap: {
+      filename: 'app.bundle.min.js',
+      url: 'app.bundle.min.js.map',
+      includeSources: true
     }
   });
   if (result.error) throw result.error;
-  return result.code;
+  return {
+    code: result.code,
+    map: result.map
+  };
 }
 
 const cssSourceBytes = statSync('style.css').size;
 const cssMinified = minifyCss(readFileSync('style.css', 'utf8'));
 writeFileSync('style.min.css', `${cssMinified}\n`);
 
-const jsSource = jsSources
-  .map((sourcePath) => readFileSync(sourcePath, 'utf8'))
-  .join('\n;\n');
+const jsSourceFiles = Object.fromEntries(
+  jsSources.map((sourcePath) => [sourcePath, readFileSync(sourcePath, 'utf8')])
+);
+const jsSource = jsSources.map((sourcePath) => jsSourceFiles[sourcePath]).join('\n;\n');
 const jsSourceBytes = jsSources.reduce((total, sourcePath) => total + statSync(sourcePath).size, 0);
 let jsMinified;
+let jsSourceMap;
 let minifier = 'terser';
 try {
-  jsMinified = await minifyJavaScriptWithTerser(jsSource);
+  const result = await minifyJavaScriptWithTerser(jsSourceFiles);
+  jsMinified = result.code;
+  jsSourceMap = result.map;
 } catch (error) {
   minifier = 'conservative';
   console.warn(`Terser unavailable; using conservative minifier. ${error.message}`);
-  jsMinified = minifyJavaScript(jsSource);
+  jsMinified = `${minifyJavaScript(jsSource)}\n//# sourceMappingURL=app.bundle.min.js.map`;
+  jsSourceMap = createSourceMapFallback(jsSourceFiles);
 }
 writeFileSync('app.bundle.min.js', `${jsMinified}\n`);
+writeFileSync('app.bundle.min.js.map', `${jsSourceMap}\n`);
 
 console.log(JSON.stringify({
   built: true,
@@ -276,9 +307,11 @@ console.log(JSON.stringify({
   },
   js: {
     file: 'app.bundle.min.js',
+    sourceMap: 'app.bundle.min.js.map',
     minifier,
     sourceBytes: jsSourceBytes,
     minifiedBytes: statSync('app.bundle.min.js').size,
+    sourceMapBytes: statSync('app.bundle.min.js.map').size,
     sources: jsSources.length
   }
 }, null, 2));

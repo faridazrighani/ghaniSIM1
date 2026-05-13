@@ -9,6 +9,68 @@ const HYSYS_FILE_TYPES = [{
     description: 'HYSYS Simulator File',
     accept: {'application/json': ['.hysys', '.json']}
 }];
+let uiToastCounter = 0;
+
+function getUiToastRegion() {
+    let region = document.getElementById('uiToastRegion');
+    if (region) return region;
+
+    region = document.createElement('div');
+    region.id = 'uiToastRegion';
+    region.className = 'ui-toast-region';
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'false');
+    document.body.appendChild(region);
+    return region;
+}
+
+function showUiToast(message, options = {}) {
+    if (!message || typeof document === 'undefined') return null;
+
+    const region = getUiToastRegion();
+    const toast = document.createElement('div');
+    const variant = options.variant || 'info';
+    const duration = Number.isFinite(options.duration) ? options.duration : 4200;
+    const toastId = `ui-toast-${++uiToastCounter}`;
+
+    toast.id = toastId;
+    toast.className = `ui-toast ui-toast-${variant}`;
+    toast.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+
+    const body = document.createElement('div');
+    body.className = 'ui-toast-body';
+
+    if (options.title) {
+        const title = document.createElement('strong');
+        title.textContent = options.title;
+        body.appendChild(title);
+    }
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    body.appendChild(text);
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'ui-toast-close';
+    close.setAttribute('aria-label', 'Dismiss notification');
+    close.textContent = 'X';
+
+    const dismiss = () => {
+        toast.classList.add('ui-toast-exit');
+        window.setTimeout(() => toast.remove(), 160);
+    };
+
+    close.addEventListener('click', dismiss);
+    toast.append(body, close);
+    region.appendChild(toast);
+
+    if (duration > 0) {
+        window.setTimeout(dismiss, duration);
+    }
+
+    return toastId;
+}
 
 function downloadSimulationFile() {
     const json = getSimulationState();
@@ -23,6 +85,10 @@ function downloadSimulationFile() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    showUiToast('Simulation file download has started.', {
+        title: 'Save As',
+        variant: 'success'
+    });
 }
 
 function openSimulationFileFallback() {
@@ -41,7 +107,7 @@ function openSimulationFileFallback() {
                 currentFileHandle = null;
                 undoStack = [];
                 redoStack = [];
-                resolve();
+                resolve(true);
             } catch (err) {
                 reject(err);
             } finally {
@@ -51,7 +117,7 @@ function openSimulationFileFallback() {
 
         input.addEventListener('cancel', () => {
             input.remove();
-            resolve();
+            resolve(false);
         }, { once: true });
 
         document.body.appendChild(input);
@@ -249,20 +315,37 @@ async function fileSave() {
         const writable = await currentFileHandle.createWritable();
         await writable.write(json);
         await writable.close();
-        alert('File saved successfully!');
+        showUiToast('File saved successfully.', {
+            title: 'Save',
+            variant: 'success'
+        });
     } catch (err) {
         if (err?.name === 'AbortError') return;
         console.error(err);
-        alert('Failed to save file.');
+        showUiToast('Failed to save file. Please check browser file permissions and try again.', {
+            title: 'Save failed',
+            variant: 'error',
+            duration: 6200
+        });
     }
 }
 
 async function fileOpen() {
     try {
-        await openSimulationFileFallback();
+        const loaded = await openSimulationFileFallback();
+        if (loaded) {
+            showUiToast('Simulation file loaded successfully.', {
+                title: 'Open',
+                variant: 'success'
+            });
+        }
     } catch (err) {
         console.error(err);
-        alert('Failed to open file. Please choose a valid .hysys or .json file saved by this app.');
+        showUiToast('Failed to open file. Please choose a valid .hysys or .json file saved by this app.', {
+            title: 'Open failed',
+            variant: 'error',
+            duration: 7200
+        });
     }
 }
 

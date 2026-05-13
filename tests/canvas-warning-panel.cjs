@@ -126,9 +126,13 @@ assert(panel.style.left === '740px', 'User-moved warning panel should preserve v
 assert(panel.style.top === '630px', 'User-moved warning panel should preserve viewport Y offset after scroll');
 
 const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
+const canvasManagerSource = fs.readFileSync(path.join(projectRoot, 'ui/canvas-manager.js'), 'utf8');
 assert(styles.includes('width: min(292px, calc(100% - 24px))'), 'Warning panel should use compact responsive width');
 assert(styles.includes('min-width: min(220px, calc(100% - 24px))'), 'Warning panel should keep a readable minimum width');
 assert(styles.includes('box-sizing: border-box'), 'Warning panel should include border-box sizing');
+assert(styles.includes('top: 126px;'), 'CSS should provide the first-paint warning panel position without JavaScript measurement');
+assert(!canvasManagerSource.includes('requestAnimationFrame(positionCanvasWarningPanelDefault)'), 'Warning panel startup should not force a layout measurement after DOM hydration');
+assert(!canvasManagerSource.includes('initCanvasWarningPanelWindow();\n    positionCanvasWarningPanelDefault();'), 'Warning panel content updates should not force geometry reads during startup');
 
 console.log(JSON.stringify({
     passed: true,
