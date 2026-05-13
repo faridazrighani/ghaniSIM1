@@ -36,8 +36,9 @@ const SOURCE_BOUNDARY_DATA_INHERIT = 'Inherit from Attached Equipment';
 const SOURCE_PRESSURE_ENERGY_STATIC = 'Static Pressure';
 const SOURCE_PRESSURE_ENERGY_TOTAL = 'Total / Stagnation Pressure';
 const SOURCE_DEFAULT_MASS_FLOW_KGH = 9500;
-const SINK_BOUNDARY_MODE_PRESSURE = 'Outlet Pressure';
-const SINK_BOUNDARY_MODE_FLOW = 'Flow Demand';
+const SINK_BOUNDARY_MODE_FREE = 'Free Outlet / Atmospheric Discharge';
+const SINK_BOUNDARY_MODE_PRESSURE = 'Outlet Pressure Boundary';
+const SINK_BOUNDARY_MODE_FLOW = 'Flow Demand Boundary';
 const SINK_ACTIVE = 'Active';
 const SINK_INACTIVE = 'Inactive';
 
@@ -139,9 +140,10 @@ function createDefaultResults(type) {
             temperature: null,
             hydraulicHead: null,
             pressureBasis: 'Static',
-            boundaryMode: 'Outlet Pressure',
+            boundaryMode: SINK_BOUNDARY_MODE_FREE,
             status: '-',
-            warnings: []
+            warnings: [],
+            calculationTrace: null
         };
     }
 
@@ -557,7 +559,19 @@ function normalizeSinkProps(sink) {
     if (!sink || sink.type !== 'sink') return;
     if (!sink.props) sink.props = {};
     if (!sink.props.active) sink.props.active = SINK_ACTIVE;
-    if (!sink.props.boundaryMode) sink.props.boundaryMode = SINK_BOUNDARY_MODE_PRESSURE;
+    const hasExplicitMode = !!sink.props.boundaryMode;
+    if (typeof getSinkBoundaryModeValue === 'function') {
+        sink.props.boundaryMode = getSinkBoundaryModeValue(sink);
+    } else if (!hasExplicitMode) {
+        const pressure = parseFloat(sink.props.pressure);
+        sink.props.boundaryMode = Number.isFinite(pressure) && Math.abs(pressure) > 1e-9
+            ? SINK_BOUNDARY_MODE_PRESSURE
+            : SINK_BOUNDARY_MODE_FREE;
+    } else if (sink.props.boundaryMode === 'Outlet Pressure' || sink.props.boundaryMode === 'Pressure') {
+        sink.props.boundaryMode = SINK_BOUNDARY_MODE_PRESSURE;
+    } else if (sink.props.boundaryMode === 'Flow Demand') {
+        sink.props.boundaryMode = SINK_BOUNDARY_MODE_FLOW;
+    }
     if (!sink.props.pressureInputBasis) {
         sink.props.pressureInputBasis = typeof PRESSURE_INPUT_BASIS_ABSOLUTE !== 'undefined'
             ? PRESSURE_INPUT_BASIS_ABSOLUTE

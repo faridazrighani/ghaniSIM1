@@ -255,10 +255,22 @@ function renderTankAdvancedInventoryData(nodeId, node, tbody) {
     });
 }
 
-function renderSinkReadoutCards(node, tbody) {
+function renderSinkReadoutCards(nodeId, node, tbody) {
+    const trace = getSinkCalculationTraceForRender(nodeId, node);
+    if (trace?.readouts?.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td colspan="2" style="padding: 10px 12px;">
+                ${renderSinkTraceReadouts(trace.readouts || [])}
+            </td>
+        `;
+        tbody.appendChild(tr);
+        return;
+    }
+
     const results = node.results || {};
     const warnings = results.warnings || [];
-    const calculatedPressureLabel = results.boundaryMode === 'Flow Demand'
+    const calculatedPressureLabel = typeof isSinkFlowDemandBoundary === 'function' && isSinkFlowDemandBoundary(node)
         ? 'Required Boundary P'
         : 'Calc. Boundary P';
     const tr = document.createElement('tr');
@@ -1596,6 +1608,220 @@ function updateAllSourceCalculationTraceReadouts() {
     updateSourceCalculationTraceReadout();
 }
 
+function formatSinkTraceDisplayValue(value, unit = '', digits = 3) {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof value === 'string') return value;
+    if (typeof formatDisplayUnitValueByUnit === 'function') {
+        return formatDisplayUnitValueByUnit(value, unit, digits, '', unit);
+    }
+    const display = typeof formatReadoutValue === 'function' ? formatReadoutValue(value) : String(value);
+    return `${display}${unit && display !== '-' ? ` ${unit}` : ''}`;
+}
+
+function renderSinkTraceMetric(label, value, unit = '', key = '', digits = 3) {
+    return `
+        <div class="pipe-trace-metric sink-trace-metric">
+            <span>${escapeHtml(label)}</span>
+            <strong${key ? ` class="prop-value" data-key="${escapeHtml(key)}"` : ''}>${escapeHtml(formatSinkTraceDisplayValue(value, unit, digits))}</strong>
+        </div>
+    `;
+}
+
+function renderSinkTraceTextMetric(label, value) {
+    return `
+        <div class="pipe-trace-metric sink-trace-metric sink-trace-metric-wide">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+    `;
+}
+
+function renderSinkTraceReadouts(readouts = []) {
+    if (!Array.isArray(readouts) || readouts.length === 0) {
+        return '<div class="pipe-trace-empty">No SNK boundary readout available.</div>';
+    }
+    return `
+        <div class="pipe-trace-metric-grid">
+            ${readouts.map(item => {
+                if (item.kind === 'text') return renderSinkTraceTextMetric(item.label, item.value);
+                return renderSinkTraceMetric(item.label, item.value, item.unit || '', item.key || '', item.digits ?? 3);
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderSinkTraceStepRows(steps = []) {
+    if (!steps.length) {
+        return '<tr><td colspan="5" class="pipe-trace-empty">No SNK trace steps available.</td></tr>';
+    }
+    return steps.map((step, index) => `
+        <tr>
+            <td data-label="Step">${index + 1}. ${escapeHtml(step.title || '-')}</td>
+            <td data-label="Formula"><code>${escapeHtml(step.formula || '-')}</code></td>
+            <td data-label="Substitution">${escapeHtml(step.substitution || '-')}</td>
+            <td data-label="Result">${escapeHtml(formatSinkTraceDisplayValue(step.result, step.unit || '', step.digits ?? 3))}</td>
+            <td data-label="Reference">${escapeHtml(step.reference || '-')}</td>
+        </tr>
+    `).join('');
+}
+
+function renderSinkTraceList(items = [], emptyText = 'None') {
+    const rows = (items || []).filter(Boolean);
+    return `
+        <ul class="pipe-trace-list sink-trace-list">
+            ${(rows.length ? rows : [emptyText]).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+    `;
+}
+
+function renderSinkDependencyChain(items = []) {
+    const rows = (items || []).filter(Boolean);
+    if (!rows.length) {
+        return '<div class="pipe-trace-empty">No SNK dependency chain available.</div>';
+    }
+    return `
+        <ol class="pipe-trace-list sink-trace-list sink-dependency-chain">
+            ${rows.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ol>
+    `;
+}
+
+function getSinkCalculationTraceForRender(nodeId, node) {
+    if (!node) return null;
+    if (typeof buildSinkCalculationTrace === 'function') {
+        return buildSinkCalculationTrace(nodeId, globalModel, connections);
+    }
+    return node.results?.calculationTrace || null;
+}
+
+function renderSinkCalculationTraceReport(trace) {
+    if (!trace) {
+        return '<div class="pipe-trace-empty">SNK calculation trace is not available.</div>';
+    }
+
+    const input = trace.inputBasis || {};
+    const pumpImpact = trace.pumpImpact || {};
+    const warnings = trace.warnings || [];
+    const statusClass = warnings.length || String(trace.status || '').toLowerCase().includes('missing')
+        ? 'pipe-trace-status-unsolved'
+        : 'pipe-trace-status-solved';
+
+    return `
+        <div class="pipe-trace-status ${statusClass}">
+            ${escapeHtml(trace.status || '-')}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Input Basis</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderSinkTraceTextMetric('SNK', input.sinkId)}
+                ${renderSinkTraceTextMetric('Boundary Role', input.boundaryRole)}
+                ${renderSinkTraceTextMetric('Boundary Mode', input.boundaryMode)}
+                ${renderSinkTraceTextMetric('Active State', input.active)}
+                ${renderSinkTraceTextMetric('Pressure Basis', input.pressureInputBasis)}
+                ${renderSinkTraceTextMetric('Pipe Pressure Type', input.pressureBasis)}
+                ${renderSinkTraceTextMetric('Unit Standard', input.unitStandard)}
+                ${renderSinkTraceTextMetric('Hydraulic Pipe(s)', (input.hydraulicPipes || []).join(', ') || '-')}
+                ${renderSinkTraceTextMetric('Pump Path Status', input.pumpPathStatus)}
+                ${renderSinkTraceTextMetric('Pump Path', input.pumpPath)}
+                ${renderSinkTraceTextMetric('Pump Impact Role', input.pumpImpactRole)}
+            </div>
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Boundary / Pump Readouts</h4>
+            ${renderSinkTraceReadouts(trace.readouts || [])}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Pump / NPSH Relevance</h4>
+            <div class="pipe-trace-metric-grid">
+                ${renderSinkTraceTextMetric('Detected Pump', pumpImpact.pumpId)}
+                ${renderSinkTraceMetric('Pump Flow', pumpImpact.flow, 'm3/h')}
+                ${renderSinkTraceMetric('Pump Head', pumpImpact.head, 'm')}
+                ${renderSinkTraceMetric('NPSHA', pumpImpact.npsha, 'm')}
+                ${renderSinkTraceMetric('NPSHR', pumpImpact.npshr, 'm')}
+                ${renderSinkTraceMetric('NPSH Margin', pumpImpact.npshMargin, 'm')}
+                ${renderSinkTraceMetric('NPSH Ratio', pumpImpact.npshRatio, '')}
+                ${renderSinkTraceTextMetric('Cavitation Status', pumpImpact.cavitationStatus)}
+            </div>
+            ${renderSinkTraceList([pumpImpact.explanation], '-')}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Dependency Chain</h4>
+            ${renderSinkDependencyChain(trace.dependencyChain || [])}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Equation Steps</h4>
+            <div class="pipe-trace-table-scroll">
+                <table class="pipe-trace-table sink-trace-table">
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Formula</th>
+                            <th>Substitution</th>
+                            <th>Result</th>
+                            <th>Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody>${renderSinkTraceStepRows(trace.steps || [])}</tbody>
+                </table>
+            </div>
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Warnings / Advisories</h4>
+            ${renderSinkTraceList(trace.warnings, 'OK')}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>Assumptions</h4>
+            ${renderSinkTraceList(trace.assumptions)}
+        </div>
+        <div class="pipe-trace-block sink-trace-block">
+            <h4>References / Method</h4>
+            ${renderSinkTraceList(trace.references)}
+        </div>
+    `;
+}
+
+function renderSinkCalculationTrace(nodeId, node, tbody) {
+    const trace = getSinkCalculationTraceForRender(nodeId, node);
+    const tr = document.createElement('tr');
+    const openAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
+    tr.innerHTML = `
+        <td colspan="2" class="pipe-trace-cell sink-trace-cell">
+            <details class="pipe-calculation-trace sink-calculation-trace" ${openAttribute}>
+                <summary>Calculation Trace / Step-by-step Report</summary>
+                <div class="pipe-calculation-trace-body sink-calculation-trace-body"
+                    data-key="sink-calculation-trace-body"
+                    data-sink-id="${escapeHtml(nodeId)}">
+                    ${renderSinkCalculationTraceReport(trace)}
+                </div>
+            </details>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+function updateSinkCalculationTraceReadout(sinkId = null) {
+    document.querySelectorAll('[data-key="sink-calculation-trace-body"]').forEach(traceBody => {
+        const nodeId = sinkId || traceBody.dataset.sinkId;
+        if (!nodeId || (sinkId && traceBody.dataset.sinkId !== sinkId)) return;
+        const node = typeof globalModel !== 'undefined' ? globalModel[nodeId] : null;
+        const trace = getSinkCalculationTraceForRender(nodeId, node);
+        traceBody.innerHTML = renderSinkCalculationTraceReport(trace);
+    });
+}
+
+function updateAllSinkCalculationTraceReadouts() {
+    if (typeof globalModel === 'undefined') return;
+    Object.keys(globalModel).forEach(nodeId => {
+        if (globalModel[nodeId]?.type === 'sink') {
+            if (typeof buildSinkCalculationTrace === 'function') {
+                if (!globalModel[nodeId].results) globalModel[nodeId].results = {};
+                globalModel[nodeId].results.calculationTrace = buildSinkCalculationTrace(nodeId, globalModel, connections);
+            }
+        }
+    });
+    updateSinkCalculationTraceReadout();
+}
+
 function renderTankReadoutCards(node, tbody) {
     const results = node.results || {};
     const warnings = results.warnings || [];
@@ -1944,26 +2170,44 @@ function renderObjectProperties(type, nodeId, node, addRow, tbody) {
         const pressureUnit = typeof getPressureInputUnit === 'function'
             ? getPressureInputUnit(pressureBasis)
             : (pressureBasis === 'Gauge' ? 'bar g' : 'bar a');
-        const absolutePressure = typeof getNodeAbsolutePressureBar === 'function'
-            ? getNodeAbsolutePressureBar(node)
-            : node.props.pressure;
+        const boundaryMode = typeof getSinkBoundaryModeValue === 'function' ? getSinkBoundaryModeValue(node) : node.props.boundaryMode;
+        const sinkPressureBasis = typeof getSinkPressureBasis === 'function' ? getSinkPressureBasis(node) : (node.props.pressureBasis || 'Static');
+        const absolutePressure = typeof getSinkBoundaryAbsolutePressureBar === 'function'
+            ? getSinkBoundaryAbsolutePressureBar(node)
+            : (typeof getNodeAbsolutePressureBar === 'function'
+                ? getNodeAbsolutePressureBar(node)
+                : node.props.pressure);
+        const sinkBoundaryModeOptions = [
+            'Free Outlet / Atmospheric Discharge',
+            'Outlet Pressure Boundary',
+            'Flow Demand Boundary'
+        ];
 
-        appendSectionHeader(tbody, 'Boundary Conditions');
+        appendSectionHeader(tbody, 'Fluid Out Boundary Conditions');
         addRow('Active', node.props.active, 'active', false, '', 'select', ['Active', 'Inactive']);
-        addRow('Boundary Mode', node.props.boundaryMode, 'boundaryMode', false, '', 'select', ['Outlet Pressure', 'Flow Demand']);
-        addRow('Pressure Basis', pressureBasis, 'pressureInputBasis', false, '', 'select', pressureOptions);
-        if (node.props.boundaryMode === 'Flow Demand') {
+        addRow('Boundary Mode', boundaryMode, 'boundaryMode', false, '', 'select', sinkBoundaryModeOptions);
+        if (typeof isSinkFreeOutletBoundary === 'function' && isSinkFreeOutletBoundary(node)) {
+            addRow('Outlet Pressure', 'Atmospheric discharge (0 bar g / 1.01325 bar a)', 'sink-free-pressure-note', true);
+            addRow('Calculated Abs. Pressure', absolutePressure, 'sink-absolute-pressure', true, 'bar a');
+            addRow('Pipe Pressure Type', 'Static pressure at terminal outlet', 'sink-pressure-basis-note', true);
+        } else if (typeof isSinkFlowDemandBoundary === 'function' && isSinkFlowDemandBoundary(node)) {
             addRow('Flow Demand', node.props.demandFlow, 'demandFlow', false, 'm3/h', 'number');
+            addRow('Pressure Basis', pressureBasis, 'pressureInputBasis', false, '', 'select', pressureOptions);
             addRow('Reference Pressure', node.props.pressure, 'pressure', false, pressureUnit, 'number');
+            addRow('Calculated Abs. Pressure', absolutePressure, 'sink-absolute-pressure', true, 'bar a');
+            addRow('Pipe Pressure Type', sinkPressureBasis, 'pressureBasis', false, '', 'select', ['Static', 'Stagnation']);
         } else {
+            addRow('Pressure Basis', pressureBasis, 'pressureInputBasis', false, '', 'select', pressureOptions);
             addRow('Outlet Pressure', node.props.pressure, 'pressure', false, pressureUnit, 'number');
+            addRow('Calculated Abs. Pressure', absolutePressure, 'sink-absolute-pressure', true, 'bar a');
+            addRow('Pipe Pressure Type', sinkPressureBasis, 'pressureBasis', false, '', 'select', ['Static', 'Stagnation']);
         }
-        addRow('Calculated Abs. Pressure', absolutePressure, 'sink-absolute-pressure', true, 'bar a');
-        addRow('Pipe Pressure Type', node.props.pressureBasis, 'pressureBasis', false, '', 'select', ['Static', 'Stagnation']);
         addRow('Elevation', node.props.elevation, 'elevation', false, 'm', 'number');
 
         appendSectionHeader(tbody, 'Calculated Outlet Readout');
-        renderSinkReadoutCards(node, tbody);
+        renderSinkReadoutCards(nodeId, node, tbody);
+        appendSectionHeader(tbody, 'Calculation Trace');
+        renderSinkCalculationTrace(nodeId, node, tbody);
         return;
     }
 

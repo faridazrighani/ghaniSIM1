@@ -192,7 +192,14 @@ function getPipeMaterialSource(segment) {
     return { status: option.status || 'Typical', source: option.source || 'Typical engineering value' };
 }
 
+function hasPipeAdditionalK(segment) {
+    return Math.max(0, parseFloat(segment?.minorLoss) || 0) > 0;
+}
+
 function getPipeFittingSource(segment) {
+    if (hasPipeAdditionalK(segment)) {
+        return { status: 'User', source: 'User-entered Add K overrides K each for this segment' };
+    }
     const option = getPipeFittingOption(segment?.fittingType);
     if (option.label === PIPE_FITTING_CUSTOM) {
         return { status: 'User', source: 'User-entered loss coefficient' };
@@ -201,6 +208,7 @@ function getPipeFittingSource(segment) {
 }
 
 function getPipeFittingK(segment) {
+    if (hasPipeAdditionalK(segment)) return 0;
     const option = getPipeFittingOption(segment?.fittingType);
     if (option.label === PIPE_FITTING_CUSTOM) {
         return Math.max(0, parseFloat(segment.fittingK) || 0);
@@ -209,6 +217,7 @@ function getPipeFittingK(segment) {
 }
 
 function getPipeFittingTotalK(segment) {
+    if (hasPipeAdditionalK(segment)) return 0;
     const quantity = Math.max(0, parseFloat(segment?.fittingQuantity) || 0);
     return quantity * getPipeFittingK(segment);
 }
@@ -381,6 +390,10 @@ function normalizePipeProps(pipeProps) {
             } else {
                 segment.fittingQuantity = Math.max(0, parseFloat(segment.fittingQuantity) || 0);
             }
+        }
+
+        if (hasPipeAdditionalK(segment)) {
+            segment.fittingK = 0;
         }
     });
 

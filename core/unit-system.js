@@ -509,6 +509,8 @@ function refreshUnitStandardDependentUi() {
     if (typeof updateAllHeatExchangerCalculationTraceReadouts === 'function') updateAllHeatExchangerCalculationTraceReadouts();
     if (typeof updateAllSeparatorReadouts === 'function') updateAllSeparatorReadouts();
     if (typeof updateAllSeparatorCalculationTraceReadouts === 'function') updateAllSeparatorCalculationTraceReadouts();
+    if (typeof updateAllSinkReadouts === 'function') updateAllSinkReadouts();
+    if (typeof updateAllSinkCalculationTraceReadouts === 'function') updateAllSinkCalculationTraceReadouts();
     if (typeof activeChartPumpId !== 'undefined' && activeChartPumpId && typeof updatePumpChart === 'function') {
         updatePumpChart(activeChartPumpId);
     }

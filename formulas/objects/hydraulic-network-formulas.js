@@ -28,12 +28,68 @@ function pressureHeadToBar(pressureHead, density) {
     return toHydraulicNumber(pressureHead) * rho * getHydraulicGravity() / 100000;
 }
 
+function getSinkBoundaryModeValue(node) {
+    const mode = node?.props?.boundaryMode;
+    const freeMode = typeof SINK_BOUNDARY_MODE_FREE !== 'undefined'
+        ? SINK_BOUNDARY_MODE_FREE
+        : 'Free Outlet / Atmospheric Discharge';
+    const pressureMode = typeof SINK_BOUNDARY_MODE_PRESSURE !== 'undefined'
+        ? SINK_BOUNDARY_MODE_PRESSURE
+        : 'Outlet Pressure Boundary';
+    const flowMode = typeof SINK_BOUNDARY_MODE_FLOW !== 'undefined'
+        ? SINK_BOUNDARY_MODE_FLOW
+        : 'Flow Demand Boundary';
+
+    if (mode === freeMode) return freeMode;
+    if (mode === pressureMode || mode === 'Outlet Pressure' || mode === 'Pressure') return pressureMode;
+    if (mode === flowMode || mode === 'Flow Demand') return flowMode;
+
+    const pressure = toHydraulicNumber(node?.props?.pressure, NaN);
+    if (!mode && Number.isFinite(pressure) && Math.abs(pressure) > 1e-9) return pressureMode;
+    return mode || freeMode;
+}
+
+function isSinkActiveBoundary(node) {
+    return !!(node && node.type === 'sink' && node.props?.active !== 'Inactive');
+}
+
+function isSinkFreeOutletBoundary(node) {
+    return !!(isSinkActiveBoundary(node) && getSinkBoundaryModeValue(node) === 'Free Outlet / Atmospheric Discharge');
+}
+
 function isSinkPressureBoundary(node) {
-    return !!(node && node.type === 'sink' && node.props?.active !== 'Inactive' && node.props?.boundaryMode !== 'Flow Demand');
+    return !!(isSinkActiveBoundary(node) && getSinkBoundaryModeValue(node) !== 'Flow Demand Boundary');
 }
 
 function isSinkFlowDemandBoundary(node) {
-    return !!(node && node.type === 'sink' && node.props?.active !== 'Inactive' && node.props?.boundaryMode === 'Flow Demand');
+    return !!(isSinkActiveBoundary(node) && getSinkBoundaryModeValue(node) === 'Flow Demand Boundary');
+}
+
+function getSinkPressureInputBasis(node) {
+    if (isSinkFreeOutletBoundary(node)) return 'Gauge';
+    return node?.props?.pressureInputBasis || (typeof PRESSURE_INPUT_BASIS_ABSOLUTE !== 'undefined' ? PRESSURE_INPUT_BASIS_ABSOLUTE : 'Absolute');
+}
+
+function getSinkPressureInputValue(node) {
+    if (isSinkFreeOutletBoundary(node)) return 0;
+    return toHydraulicNumber(node?.props?.pressure, 0);
+}
+
+function getSinkPressureBasis(node) {
+    if (isSinkFreeOutletBoundary(node)) return 'Static';
+    return node?.props?.pressureBasis || 'Static';
+}
+
+function getSinkBoundaryAbsolutePressureBar(node) {
+    const atm = typeof ATM_PRESSURE_BAR === 'number' ? ATM_PRESSURE_BAR : 1.01325;
+    if (!node || !node.props) return null;
+    if (isSinkFreeOutletBoundary(node)) return atm;
+    const pressure = getSinkPressureInputValue(node);
+    const basis = getSinkPressureInputBasis(node);
+    if (typeof pressureInputToAbsoluteBar === 'function') {
+        return pressureInputToAbsoluteBar(pressure, basis);
+    }
+    return basis === 'Gauge' ? pressure + atm : pressure;
 }
 
 function getPipeVelocityHead(pipeId, flowRateM3H, model, segmentSelector = 'outlet') {
@@ -704,6 +760,367 @@ function buildSourceCalculationTrace(
     };
 }
 
+function roundSinkTraceNumber(value, digits = 3) {
+    return roundSourceTraceNumber(value, digits);
+}
+
+function formatSinkTraceNumber(value, digits = 3) {
+    return formatSourceTraceNumber(value, digits);
+}
+
+function createSinkTraceStep(title, formula, substitution, result, unit = '', reference = '') {
+    return { title, formula, substitution, result, unit, reference };
+}
+
+function getSinkTraceHydraulicConnections(
+    sinkId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : [])
+) {
+    return (connectionList || [])
+        .map(conn => typeof orientHydraulicConnection === 'function' ? orientHydraulicConnection(conn, model) : conn)
+        .filter(conn => conn && conn.pipeId && conn.connectionType !== 'semantic' && (conn.from === sinkId || conn.to === sinkId))
+        .map(conn => ({
+            pipeId: conn.pipeId,
+            from: conn.from,
+            to: conn.to,
+            otherId: conn.from === sinkId ? conn.to : conn.from,
+            text: `${conn.from === sinkId ? conn.to : conn.from} -> ${conn.pipeId}`
+        }));
+}
+
+function getSinkTracePipeFlow(pipe, fallback = null) {
+    const flow = toHydraulicNumber(pipe?.results?.flow, NaN);
+    return Number.isFinite(flow) && (pipe?.results?.pressureCalculated || flow > 0) ? flow : fallback;
+}
+
+function getSinkTracePipeStaticPressure(pipe, conn, sinkId) {
+    if (typeof getPipePressureForNodeSide === 'function') {
+        return getPipePressureForNodeSide(pipe, conn || {}, sinkId);
+    }
+    if (!pipe?.results || !conn) return null;
+    if (conn.to === sinkId) return toHydraulicNumber(pipe.results.outletPressure, NaN);
+    if (conn.from === sinkId) return toHydraulicNumber(pipe.results.inletPressure, NaN);
+    return toHydraulicNumber(pipe.results.pressure, NaN);
+}
+
+function getSinkTracePipeStagnationPressure(pipe, conn, sinkId, density, velocityHead = 0) {
+    if (typeof getPipeStagnationPressureForNodeSide === 'function') {
+        return getPipeStagnationPressureForNodeSide(pipe, conn || {}, sinkId);
+    }
+    const staticPressure = getSinkTracePipeStaticPressure(pipe, conn, sinkId);
+    if (!Number.isFinite(staticPressure)) return null;
+    return staticPressure + pressureHeadToBar(velocityHead, density);
+}
+
+function getSinkTracePumpPathInfo(
+    sinkId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : []),
+    density = 1000,
+    vaporPressurePa = 0
+) {
+    if (typeof createPumpHydraulicContext !== 'function') {
+        return { status: 'Not evaluated', pumpId: '', pathText: '-', warnings: [], role: 'Downstream boundary not evaluated' };
+    }
+
+    const pumpIds = Object.keys(model || {}).filter(id => model[id]?.type === 'pump');
+    const collectedWarnings = [];
+
+    for (const pumpId of pumpIds) {
+        const context = createPumpHydraulicContext(
+            pumpId,
+            model,
+            connectionList,
+            Number.isFinite(density) ? density : 1000,
+            Number.isFinite(vaporPressurePa) ? vaporPressurePa : 0
+        );
+        const dischargePath = context?.dischargePath || {};
+        const warnings = context?.networkWarnings || dischargePath.warnings || [];
+        warnings.forEach(warning => {
+            if (warning && !collectedWarnings.includes(warning)) collectedWarnings.push(warning);
+        });
+
+        if (dischargePath.boundaryId === sinkId) {
+            const steps = dischargePath.steps || [];
+            const pathText = steps.length
+                ? steps.map(step => `${step.from} - ${step.pipeId} -> ${step.to}`).join(' | ')
+                : sinkId;
+            const pump = model[pumpId];
+            const flow = toHydraulicNumber(pump?.results?.flow, NaN);
+            const head = toHydraulicNumber(pump?.results?.head, NaN);
+            const npsha = toHydraulicNumber(pump?.results?.npsha, NaN);
+            const npshr = toHydraulicNumber(pump?.results?.npshr, NaN);
+            const npshMargin = toHydraulicNumber(pump?.results?.npshMargin, NaN);
+            const npshRatio = toHydraulicNumber(pump?.results?.npshRatio, NaN);
+            return {
+                status: context.isComplete ? `Valid from ${pumpId}` : `Incomplete from ${pumpId}`,
+                pumpId,
+                pathText,
+                role: 'Discharge fluid-out boundary for pump operating point and NPSH check',
+                flow: Number.isFinite(flow) ? flow : null,
+                head: Number.isFinite(head) ? head : null,
+                npsha: Number.isFinite(npsha) ? npsha : null,
+                npshr: Number.isFinite(npshr) ? npshr : null,
+                npshMargin: Number.isFinite(npshMargin) ? npshMargin : null,
+                npshRatio: Number.isFinite(npshRatio) ? npshRatio : null,
+                cavitationStatus: pump?.results?.cavitationStatus || '-',
+                warnings
+            };
+        }
+    }
+
+    return {
+        status: 'Missing hydraulic path from pump discharge',
+        pumpId: '',
+        pathText: '-',
+        role: 'Downstream boundary not connected to a pump discharge path',
+        warnings: collectedWarnings
+    };
+}
+
+function buildSinkCalculationTrace(
+    sinkId,
+    model = (typeof globalModel !== 'undefined' ? globalModel : {}),
+    connectionList = (typeof connections !== 'undefined' ? connections : [])
+) {
+    const sink = model?.[sinkId];
+    if (!sink || sink.type !== 'sink') {
+        return {
+            status: 'SNK not found',
+            inputBasis: {},
+            readouts: [],
+            steps: [],
+            warnings: ['SNK object is not available in the active model.'],
+            assumptions: [],
+            references: []
+        };
+    }
+
+    const props = sink.props || {};
+    const fluidProps = model?.FLUID?.props || {};
+    const density = Math.max(toHydraulicNumber(fluidProps.density, 1000), 1);
+    const temperature = toHydraulicNumber(fluidProps.temp, NaN);
+    const vaporPressureBar = toHydraulicNumber(fluidProps.vaporPressure, NaN);
+    const vaporPressurePa = Number.isFinite(vaporPressureBar) ? vaporPressureBar * 100000 : 0;
+    const mode = getSinkBoundaryModeValue(sink);
+    const pressureInputBasis = getSinkPressureInputBasis(sink);
+    const pressureInputUnit = typeof getPressureInputUnit === 'function'
+        ? getPressureInputUnit(pressureInputBasis)
+        : (pressureInputBasis === 'Gauge' ? 'bar g' : 'bar a');
+    const pressureInput = getSinkPressureInputValue(sink);
+    const pressureBasis = getSinkPressureBasis(sink);
+    const boundaryPressureAbs = getSinkBoundaryAbsolutePressureBar(sink);
+    const elevation = getNodeHydraulicElevation(sink);
+    const pressureHead = Number.isFinite(boundaryPressureAbs)
+        ? pressureBarToHead(boundaryPressureAbs, density)
+        : null;
+    const hydraulicConnections = getSinkTraceHydraulicConnections(sinkId, model, connectionList);
+    const firstHydraulicConnection = hydraulicConnections[0] || null;
+    const pipe = firstHydraulicConnection ? model[firstHydraulicConnection.pipeId] : null;
+    const demandFlow = Math.max(0, toHydraulicNumber(props.demandFlow, 0));
+    const flow = getSinkTracePipeFlow(pipe, isSinkFlowDemandBoundary(sink) ? demandFlow : null);
+    const terminalPath = firstHydraulicConnection ? { steps: [firstHydraulicConnection] } : null;
+    const terminalVelocityHead = pressureBasis === 'Static' && Number.isFinite(flow)
+        ? getBoundaryPipeVelocityHead(sink, flow, terminalPath, model)
+        : 0;
+    const staticPressure = getSinkTracePipeStaticPressure(pipe, firstHydraulicConnection, sinkId);
+    const stagnationPressure = getSinkTracePipeStagnationPressure(pipe, firstHydraulicConnection, sinkId, density, terminalVelocityHead);
+    const calculatedPressure = pressureBasis === 'Stagnation' ? stagnationPressure : staticPressure;
+    const pressureResidual = isSinkPressureBoundary(sink)
+        && Number.isFinite(calculatedPressure)
+        && Number.isFinite(boundaryPressureAbs)
+            ? calculatedPressure - boundaryPressureAbs
+            : null;
+    const hydraulicHead = isSinkFlowDemandBoundary(sink) || !Number.isFinite(pressureHead)
+        ? null
+        : pressureHead + elevation + (pressureBasis === 'Static' ? terminalVelocityHead : 0);
+    const massFlow = Number.isFinite(flow) ? flow * density : null;
+    const pumpPath = getSinkTracePumpPathInfo(sinkId, model, connectionList, density, vaporPressurePa);
+    const warnings = [];
+    if (props.active === 'Inactive') warnings.push('SNK is inactive and is excluded from the hydraulic boundary solution.');
+    if (!hydraulicConnections.length) warnings.push('SNK has no solid hydraulic pipe connection.');
+    if (hydraulicConnections.length > 1 && pressureBasis === 'Static') {
+        warnings.push('Static discharge boundary should normally connect to one terminal pipe. Use Stagnation only for reservoir/header style total-pressure boundary behavior.');
+    }
+    if (isSinkFlowDemandBoundary(sink) && demandFlow <= 0) warnings.push('Flow Demand Boundary requires a positive demand flow.');
+    if (isSinkPressureBoundary(sink) && Number.isFinite(pressureResidual) && Math.abs(pressureResidual) > 0.02) {
+        warnings.push('Pressure residual exceeds 0.02 bar; review pump operating point, discharge losses, or boundary pressure basis.');
+    }
+    if (!isSinkFreeOutletBoundary(sink) && pressureInputBasis === 'Absolute' && Number.isFinite(boundaryPressureAbs) && boundaryPressureAbs <= 0) {
+        warnings.push('Outlet pressure is at or below 0 bar a. Use 0 bar g or 1.01325 bar a for atmospheric discharge.');
+    }
+    if (Number.isFinite(calculatedPressure) && Number.isFinite(vaporPressureBar) && calculatedPressure <= vaporPressureBar) {
+        warnings.push('Calculated outlet pressure is at or below the active fluid vapor pressure.');
+    }
+    (pumpPath.warnings || []).forEach(warning => {
+        if (warning && !warnings.includes(warning)) warnings.push(warning);
+    });
+
+    const steps = [];
+    steps.push(createSinkTraceStep(
+        'SNK boundary role',
+        'SNK = downstream Fluid Out Boundary',
+        `${sinkId} uses ${mode}`,
+        mode,
+        '',
+        'Boundary condition definition for pump discharge network solution'
+    ));
+    steps.push(createSinkTraceStep(
+        'Outlet pressure basis',
+        isSinkFreeOutletBoundary(sink)
+            ? 'Pout,abs = Patm'
+            : 'Pout,abs = Pinput + Patm when gauge; Pout,abs = Pinput when absolute',
+        isSinkFreeOutletBoundary(sink)
+            ? 'Free outlet imposes 0 bar g = 1.01325 bar a'
+            : `${formatSinkTraceNumber(pressureInput)} ${pressureInputUnit}, basis = ${pressureInputBasis}`,
+        roundSinkTraceNumber(boundaryPressureAbs, 6),
+        'bar a',
+        'NIST standard atmosphere and pressure head convention'
+    ));
+    steps.push(createSinkTraceStep(
+        'Outlet pressure head',
+        'Hp = Pabs x 100000 / (rho x g)',
+        `${formatSinkTraceNumber(boundaryPressureAbs, 6)} bar a, rho = ${formatSinkTraceNumber(density)} kg/m3`,
+        roundSinkTraceNumber(pressureHead, 3),
+        'm',
+        'Bernoulli pressure-head term'
+    ));
+    steps.push(createSinkTraceStep(
+        'Outlet elevation head',
+        'zSNK = user specified outlet elevation',
+        `${sinkId} elevation = ${formatSinkTraceNumber(elevation)} m`,
+        roundSinkTraceNumber(elevation, 3),
+        'm',
+        'Hydraulic datum/elevation term'
+    ));
+    steps.push(createSinkTraceStep(
+        'Terminal velocity head',
+        pressureBasis === 'Static'
+            ? 'Hvel = v^2 / (2g)'
+            : 'Hvel = 0 when boundary pressure is stagnation/total pressure',
+        pressureBasis === 'Static'
+            ? `${firstHydraulicConnection?.pipeId || 'No terminal pipe'} outlet velocity head = ${formatSinkTraceNumber(terminalVelocityHead)} m`
+            : 'Stagnation pressure already includes velocity head',
+        roundSinkTraceNumber(terminalVelocityHead, 3),
+        'm',
+        'Bernoulli static-to-total pressure relation'
+    ));
+    steps.push(createSinkTraceStep(
+        isSinkFlowDemandBoundary(sink) ? 'Flow demand specification' : 'SNK hydraulic head',
+        isSinkFlowDemandBoundary(sink)
+            ? 'Qpump = Qdemand; required discharge pressure is solved from pump head and discharge losses'
+            : (pressureBasis === 'Static' ? 'HSNK = Hp + zSNK + Hvel' : 'HSNK = Hp + zSNK'),
+        isSinkFlowDemandBoundary(sink)
+            ? `Qdemand = ${formatSinkTraceNumber(demandFlow)} m3/h`
+            : `${formatSinkTraceNumber(pressureHead)} + ${formatSinkTraceNumber(elevation)} + ${formatSinkTraceNumber(terminalVelocityHead)} = ${formatSinkTraceNumber(hydraulicHead)} m`,
+        isSinkFlowDemandBoundary(sink) ? roundSinkTraceNumber(demandFlow, 3) : roundSinkTraceNumber(hydraulicHead, 3),
+        isSinkFlowDemandBoundary(sink) ? 'm3/h' : 'm',
+        'Pump/system operating point and downstream boundary energy balance'
+    ));
+    steps.push(createSinkTraceStep(
+        'Pump and NPSH influence',
+        'SNK changes discharge system head or imposed flow, which moves the pump operating point',
+        pumpPath.pumpId
+            ? `${pumpPath.pumpId}: Q = ${formatSinkTraceNumber(pumpPath.flow)} m3/h, H = ${formatSinkTraceNumber(pumpPath.head)} m, NPSHA = ${formatSinkTraceNumber(pumpPath.npsha)} m, NPSHR = ${formatSinkTraceNumber(pumpPath.npshr)} m`
+            : pumpPath.status,
+        pumpPath.cavitationStatus || pumpPath.status,
+        '',
+        'Hydraulic Institute NPSH margin guidance and pump curve operating point method'
+    ));
+
+    const readouts = [
+        { label: 'Boundary Mode', value: mode, unit: '', key: 'sink-trace-boundary-mode', kind: 'text' },
+        { label: 'Boundary Pressure Input', value: pressureInput, unit: pressureInputUnit, key: 'sink-trace-pressure-input' },
+        { label: 'Boundary Abs. Pressure', value: boundaryPressureAbs, unit: 'bar a', key: 'sink-boundary-pressure' },
+        { label: 'SNK Elevation', value: elevation, unit: 'm', key: 'sink-trace-elevation' },
+        { label: 'Pressure Head', value: pressureHead, unit: 'm', key: 'sink-trace-pressure-head' },
+        { label: 'Terminal Velocity Head', value: terminalVelocityHead, unit: 'm', key: 'sink-trace-velocity-head' },
+        { label: 'SNK Hydraulic Head', value: hydraulicHead, unit: 'm', key: 'sink-hydraulic-head' },
+        { label: 'Flow Rate', value: flow, unit: 'm3/h', key: 'sink-flow' },
+        { label: 'Mass Flow', value: massFlow, unit: 'kg/h', key: 'sink-mass-flow' },
+        { label: 'Static Pipe Pressure', value: staticPressure, unit: 'bar a', key: 'sink-static-pressure' },
+        { label: 'Stagnation Pressure', value: stagnationPressure, unit: 'bar a', key: 'sink-stagnation-pressure' },
+        { label: isSinkFlowDemandBoundary(sink) ? 'Required Boundary P' : 'Pressure Residual', value: isSinkFlowDemandBoundary(sink) ? calculatedPressure : pressureResidual, unit: isSinkFlowDemandBoundary(sink) ? 'bar a' : 'bar', key: isSinkFlowDemandBoundary(sink) ? 'sink-calculated-pressure' : 'sink-pressure-residual' },
+        { label: 'Temperature', value: temperature, unit: 'deg C', key: 'sink-temperature' },
+        { label: 'Density Used', value: density, unit: 'kg/m3', key: 'sink-fluid-density' },
+        { label: 'Vapor Pressure', value: vaporPressureBar, unit: 'bar a', key: 'sink-fluid-vapor-pressure' },
+        { label: 'Pump NPSHA', value: pumpPath.npsha, unit: 'm', key: 'sink-pump-npsha' },
+        { label: 'Pump NPSHR', value: pumpPath.npshr, unit: 'm', key: 'sink-pump-npshr' },
+        { label: 'NPSH Margin', value: pumpPath.npshMargin, unit: 'm', key: 'sink-pump-npsh-margin' },
+        { label: 'NPSH Ratio', value: pumpPath.npshRatio, unit: '', key: 'sink-pump-npsh-ratio' }
+    ];
+
+    const dependencyChain = [
+        'SNK Active state -> determines whether the downstream boundary participates in hydraulic solving.',
+        'Boundary Mode -> selects atmospheric pressure, specified outlet pressure, or imposed discharge flow.',
+        'Pressure Basis -> gauge/absolute conversion to absolute pressure; free outlet fixes 0 bar g / 1.01325 bar a.',
+        'Outlet elevation + pressure head + optional velocity head -> downstream boundary head.',
+        'Pipe/fitting/valve/equipment configuration upstream of SNK -> discharge loss seen by the pump.',
+        'For pressure/free outlet modes, pump flow is obtained from the pump curve and system curve intersection.',
+        'For flow demand mode, pump flow is imposed and required discharge pressure/head is reported as the consequence.',
+        'Changed pump flow changes suction losses and NPSHR; changed suction losses directly affect NPSHA.',
+        'Fluid Basis density and vapor pressure remain the thermodynamic basis for NPSHA and cavitation margin.'
+    ];
+
+    return {
+        status: warnings.length ? 'Review' : 'OK',
+        inputBasis: {
+            sinkId,
+            boundaryRole: 'Fluid Out Boundary',
+            boundaryMode: mode,
+            active: props.active || 'Active',
+            pressureInputBasis,
+            pressureBasis,
+            unitStandard: typeof getUnitStandard === 'function' ? getUnitStandard() : 'Internal metric engineering units',
+            hydraulicPipes: hydraulicConnections.map(item => item.text),
+            pumpPathStatus: pumpPath.status,
+            pumpPath: pumpPath.pathText,
+            pumpImpactRole: pumpPath.role
+        },
+        dependencyChain,
+        boundary: {
+            pressureInput,
+            pressureInputUnit,
+            absolutePressureBar: roundSinkTraceNumber(boundaryPressureAbs, 6),
+            elevation: roundSinkTraceNumber(elevation, 3),
+            pressureHead: roundSinkTraceNumber(pressureHead, 3),
+            velocityHead: roundSinkTraceNumber(terminalVelocityHead, 3),
+            hydraulicHead: roundSinkTraceNumber(hydraulicHead, 3),
+            demandFlow: roundSinkTraceNumber(demandFlow, 3)
+        },
+        pumpImpact: {
+            pumpId: pumpPath.pumpId,
+            flow: pumpPath.flow,
+            head: pumpPath.head,
+            npsha: pumpPath.npsha,
+            npshr: pumpPath.npshr,
+            npshMargin: pumpPath.npshMargin,
+            npshRatio: pumpPath.npshRatio,
+            cavitationStatus: pumpPath.cavitationStatus,
+            explanation: isSinkFlowDemandBoundary(sink)
+                ? 'Flow demand fixes the operating flow. The application then evaluates whether the pump curve can provide the head and NPSH margin at that flow.'
+                : 'Downstream pressure/elevation/losses define system head. The pump operating point shifts to the pump curve and system curve intersection.'
+        },
+        readouts,
+        steps,
+        warnings: [...new Set(warnings)],
+        assumptions: [
+            'SNK is a boundary condition for fluid leaving the modeled network; it is not itself a pressure-loss element.',
+            'Discharge restriction is calculated from modeled pipes, fittings, valves, vessels, and heat exchangers, not from the SNK label alone.',
+            'Free outlet represents atmospheric discharge at the outlet plane with 0 bar gauge pressure.',
+            'NPSHA is evaluated on the suction side, but SNK can still change NPSHA indirectly by moving the pump operating flow and suction-side losses.'
+        ],
+        references: [
+            'pdf_ref/ref4-standar_ANSI-9-6-2024_rotodynamic_pump_guidline_for_NPSH_margin-hydraulic-institute.pdf: NPSHA, NPSHR, NPSH margin, and pump operating margin guidance.',
+            'pdf_ref/ref1-fluid-mechanics-fundaments-and-applications.pdf: Bernoulli equation, pressure head, elevation head, velocity head, and head-loss fundamentals.',
+            'pdf_ref/ref2-introduction-fluid-mechanics.pdf: steady incompressible flow energy equation and pressure boundary interpretation.',
+            'pdf_ref/ref3-cavitations_and_centrifugal_pump_book_edward.pdf: centrifugal pump cavitation and suction-condition interpretation.',
+            'NIST Guide to the SI Appendix B: 1 standard atmosphere = 101325 Pa exactly; NASA Glenn Bernoulli page: static plus dynamic pressure forms stagnation pressure.'
+        ]
+    };
+}
+
 function getSourceVelocityHeadForBoundary(source, flowRateM3H, path, model) {
     const sourceId = Object.keys(model || {}).find(nodeId => model[nodeId] === source) || source?.name;
     const sourceType = getSourceTypeValue(source, getSourceLinkForSource(sourceId), model);
@@ -726,13 +1143,15 @@ function getBoundaryHydraulicHead(node, density, flowRateM3H = 0, path = null, m
         return pressureBarToHead(boundary.pressureAbsBar, density) + boundary.elevation + velocityHead;
     }
 
-    const boundaryPressure = typeof getNodeAbsolutePressureBar === 'function'
-        ? getNodeAbsolutePressureBar(node)
-        : node.props.pressure;
+    const boundaryPressure = node.type === 'sink' && typeof getSinkBoundaryAbsolutePressureBar === 'function'
+        ? getSinkBoundaryAbsolutePressureBar(node)
+        : (typeof getNodeAbsolutePressureBar === 'function'
+            ? getNodeAbsolutePressureBar(node)
+            : node.props.pressure);
     const pressureHead = pressureBarToHead(boundaryPressure, density);
     let boundaryHead = pressureHead + getNodeHydraulicElevation(node);
 
-    if (node.type === 'sink' && node.props.pressureBasis === 'Static') {
+    if (node.type === 'sink' && getSinkPressureBasis(node) === 'Static') {
         boundaryHead += getBoundaryPipeVelocityHead(node, flowRateM3H, path, model);
     }
 
@@ -740,9 +1159,16 @@ function getBoundaryHydraulicHead(node, density, flowRateM3H = 0, path = null, m
 }
 
 function getBoundaryAbsolutePressureWarnings(node, label) {
-    if (!node || !node.props || node.props.pressureInputBasis !== PRESSURE_INPUT_BASIS_ABSOLUTE) return [];
+    if (!node || !node.props) return [];
+    if (node.type === 'sink' && isSinkFreeOutletBoundary(node)) return [];
+    const pressureInputBasis = node.type === 'sink' && typeof getSinkPressureInputBasis === 'function'
+        ? getSinkPressureInputBasis(node)
+        : node.props.pressureInputBasis;
+    if (pressureInputBasis !== PRESSURE_INPUT_BASIS_ABSOLUTE) return [];
     const sourceBoundary = node.type === 'source' ? resolveSourceBoundaryData(node, globalModel) : null;
-    const absolutePressure = sourceBoundary
+    const absolutePressure = node.type === 'sink' && typeof getSinkBoundaryAbsolutePressureBar === 'function'
+        ? getSinkBoundaryAbsolutePressureBar(node)
+        : sourceBoundary
         ? sourceBoundary.pressureAbsBar
         : (typeof getNodeAbsolutePressureBar === 'function'
             ? getNodeAbsolutePressureBar(node)

@@ -58,8 +58,12 @@ const SINK_SCHEMA = {
     boundaryMode: {
         label: 'Boundary Mode',
         type: 'select',
-        default: 'Outlet Pressure',
-        options: ['Outlet Pressure', 'Flow Demand']
+        default: 'Free Outlet / Atmospheric Discharge',
+        options: [
+            'Free Outlet / Atmospheric Discharge',
+            'Outlet Pressure Boundary',
+            'Flow Demand Boundary'
+        ]
     },
     pressureInputBasis: {
         label: 'Pressure Basis',
@@ -67,14 +71,14 @@ const SINK_SCHEMA = {
         default: 'Gauge',
         options: ['Gauge', 'Absolute']
     },
-    pressure: { label: 'Outlet Pressure', unit: 'bar g', type: 'number', default: 0 },
+    pressure: { label: 'Outlet / Reference Pressure', unit: 'bar g', type: 'number', default: 0 },
     pressureBasis: {
         label: 'Pipe Pressure Type',
         type: 'select',
         default: 'Static',
         options: ['Static', 'Stagnation']
     },
-    elevation: { label: 'Elevation', unit: 'm', type: 'number', default: 0 },
+    elevation: { label: 'Outlet Elevation', unit: 'm', type: 'number', default: 0 },
     demandFlow: { label: 'Flow Demand', unit: 'm3/h', type: 'number', default: 0 }
 };
 

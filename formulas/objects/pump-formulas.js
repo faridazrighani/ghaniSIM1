@@ -694,7 +694,10 @@ function calculatePressureBoundaryHeadForOptimization(node, density, flowRateM3H
     const pressureHead = pressureBarToHead(Number.isFinite(pressure) ? pressure : 1.01325, density);
     let boundaryHead = pressureHead + (sourceBoundary ? sourceBoundary.elevation : getNodeHydraulicElevation(node));
 
-    if (node.type === 'sink' && node.props.pressureBasis === 'Static') {
+    const sinkPressureBasis = node.type === 'sink' && typeof getSinkPressureBasis === 'function'
+        ? getSinkPressureBasis(node)
+        : node.props.pressureBasis;
+    if (node.type === 'sink' && sinkPressureBasis === 'Static') {
         boundaryHead += getBoundaryPipeVelocityHead(node, flowRateM3H, path, model);
     }
 

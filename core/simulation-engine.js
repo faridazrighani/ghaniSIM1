@@ -835,18 +835,24 @@ function updateSinkReadout(sinkId) {
     const flow = pipe && pipe.results && pipe.results.pressureCalculated ? parseFloat(pipe.results.flow) : null;
     const staticPressure = getPipePressureForNodeSide(pipe, conn || {}, sinkId);
     const stagnationPressure = getPipeStagnationPressureForNodeSide(pipe, conn || {}, sinkId);
-    const calculatedPressure = sink.props.pressureBasis === 'Stagnation'
+    const boundaryMode = typeof getSinkBoundaryModeValue === 'function' ? getSinkBoundaryModeValue(sink) : sink.props.boundaryMode;
+    const pressureBasis = typeof getSinkPressureBasis === 'function' ? getSinkPressureBasis(sink) : (sink.props.pressureBasis || 'Static');
+    const pressureInputBasis = typeof getSinkPressureInputBasis === 'function' ? getSinkPressureInputBasis(sink) : (sink.props.pressureInputBasis || 'Absolute');
+    const calculatedPressure = pressureBasis === 'Stagnation'
         ? stagnationPressure
         : staticPressure;
-    const boundaryPressureInput = parseFloat(sink.props.pressure);
-    const boundaryPressure = typeof getNodeAbsolutePressureBar === 'function'
-        ? getNodeAbsolutePressureBar(sink)
-        : boundaryPressureInput;
+    const boundaryPressureInput = typeof getSinkPressureInputValue === 'function' ? getSinkPressureInputValue(sink) : parseFloat(sink.props.pressure);
+    const boundaryPressure = typeof getSinkBoundaryAbsolutePressureBar === 'function'
+        ? getSinkBoundaryAbsolutePressureBar(sink)
+        : (typeof getNodeAbsolutePressureBar === 'function'
+            ? getNodeAbsolutePressureBar(sink)
+            : boundaryPressureInput);
     const selectedPressure = Number.isFinite(calculatedPressure) ? calculatedPressure : boundaryPressure;
     const elevation = parseFloat(sink.props.elevation) || 0;
     const hydraulicHead = getPipeHydraulicHeadForNodeSide(pipe, conn || {}, sinkId)
         ?? (Number.isFinite(selectedPressure) ? pressureBarToHead(selectedPressure, density) + elevation : null);
-    const pressureResidual = sink.props.boundaryMode === SINK_BOUNDARY_MODE_PRESSURE
+    const pressureResidual = typeof isSinkPressureBoundary === 'function'
+        && isSinkPressureBoundary(sink)
         && Number.isFinite(calculatedPressure)
         && Number.isFinite(boundaryPressure)
             ? calculatedPressure - boundaryPressure
@@ -862,18 +868,21 @@ function updateSinkReadout(sinkId) {
     if (conn && (!pipe || !pipe.results || !pipe.results.pressureCalculated)) {
         warnings.push('Connected pipe has no solved hydraulic result.');
     }
-    if (sink.props.pressureBasis === 'Static' && sinkConnections.length > 1) {
+    if (pressureBasis === 'Static' && sinkConnections.length > 1) {
         warnings.push('Static pressure boundary should connect to one pipe only; use Stagnation for reservoir/header style boundaries.');
     }
-    if (sink.props.boundaryMode === SINK_BOUNDARY_MODE_FLOW && (parseFloat(sink.props.demandFlow) || 0) <= 0) {
+    if (typeof isSinkFlowDemandBoundary === 'function' && isSinkFlowDemandBoundary(sink) && (parseFloat(sink.props.demandFlow) || 0) <= 0) {
         warnings.push('Flow Demand must be greater than zero.');
     }
-    if (sink.props.boundaryMode === SINK_BOUNDARY_MODE_PRESSURE && Number.isFinite(pressureResidual) && Math.abs(pressureResidual) > 0.02) {
+    if (typeof isSinkPressureBoundary === 'function' && isSinkPressureBoundary(sink) && Number.isFinite(pressureResidual) && Math.abs(pressureResidual) > 0.02) {
         warnings.push('Boundary pressure residual exceeds 0.02 bar; check convergence or boundary basis.');
     }
     if (
-        sink.props.boundaryMode === SINK_BOUNDARY_MODE_PRESSURE
-        && sink.props.pressureInputBasis === PRESSURE_INPUT_BASIS_ABSOLUTE
+        typeof isSinkFreeOutletBoundary === 'function'
+        && !isSinkFreeOutletBoundary(sink)
+        && typeof isSinkPressureBoundary === 'function'
+        && isSinkPressureBoundary(sink)
+        && pressureInputBasis === PRESSURE_INPUT_BASIS_ABSOLUTE
         && Number.isFinite(boundaryPressure)
         && boundaryPressure <= 0
     ) {
@@ -894,11 +903,15 @@ function updateSinkReadout(sinkId) {
     sink.results.massFlow = Number.isFinite(flow) ? Number((flow * density).toFixed(3)) : null;
     sink.results.temperature = Number.isFinite(temperature) ? Number(temperature.toFixed(3)) : null;
     sink.results.hydraulicHead = Number.isFinite(hydraulicHead) ? Number(hydraulicHead.toFixed(3)) : null;
-    sink.results.pressureBasis = sink.props.pressureBasis;
-    sink.results.pressureInputBasis = sink.props.pressureInputBasis;
-    sink.results.boundaryMode = sink.props.boundaryMode;
+    sink.results.pressureBasis = pressureBasis;
+    sink.results.pressureInputBasis = pressureInputBasis;
+    sink.results.boundaryMode = boundaryMode;
     sink.results.status = warnings.length ? 'Warning' : 'OK';
     sink.results.warnings = warnings;
+
+    if (typeof updateObjectOperatingStatusVisual === 'function') {
+        updateObjectOperatingStatusVisual(sinkId);
+    }
 
     if (currentSelectedNode === sinkId) {
         setSidebarReadout('sink-attached-pipe', sink.results.attachedPipe || '-');
@@ -1072,7 +1085,10 @@ function updateSimulation(options = {}) {
 
             const demandWarnings = [];
             if (flowRequest.source === 'sink-flow-demand') {
-                const selectedPressure = hydraulicContext.dischargeBoundary.props.pressureBasis === 'Stagnation'
+                const dischargePressureBasis = typeof getSinkPressureBasis === 'function'
+                    ? getSinkPressureBasis(hydraulicContext.dischargeBoundary)
+                    : hydraulicContext.dischargeBoundary.props.pressureBasis;
+                const selectedPressure = dischargePressureBasis === 'Stagnation'
                     ? hydraulicSnapshot.sinkStagnationPressureBar
                     : hydraulicSnapshot.sinkStaticPressureBar;
                 if (selectedPressure <= 0) {
@@ -1180,6 +1196,9 @@ function updateSimulation(options = {}) {
     updateAllSinkReadouts();
     if (typeof updateAllSourceCalculationTraceReadouts === 'function') {
         updateAllSourceCalculationTraceReadouts();
+    }
+    if (typeof updateAllSinkCalculationTraceReadouts === 'function') {
+        updateAllSinkCalculationTraceReadouts();
     }
     if (typeof updateCanvasWarningPanel === 'function') {
         updateCanvasWarningPanel();
