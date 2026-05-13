@@ -1488,10 +1488,9 @@ function createSrcHelpSection(title, content, open = false) {
     return section;
 }
 
-function createSrcDecisionMatrix(rows = []) {
-    const labels = ['SRC Type', 'Pressure & Elevation', 'Flow Basis', 'Connection', 'Use Case'];
+function createSrcHelpMatrix(labels = [], rows = [], className = '') {
     const matrix = document.createElement('div');
-    matrix.className = 'src-decision-matrix';
+    matrix.className = `src-decision-matrix ${className}`.trim();
 
     const header = document.createElement('div');
     header.className = 'src-decision-header';
@@ -1516,6 +1515,13 @@ function createSrcDecisionMatrix(rows = []) {
     });
 
     return matrix;
+}
+
+function createSrcDecisionMatrix(rows = []) {
+    return createSrcHelpMatrix(
+        ['SRC Type', 'Pressure & Elevation', 'Flow Basis', 'Connection', 'Use Case'],
+        rows
+    );
 }
 
 function createSrcHelpContent() {
@@ -1565,6 +1571,61 @@ function createSrcHelpContent() {
                 'Generic upstream boundary when the source does not need to be represented as a tank, vessel, or header.'
             ]
         ])),
+        createFluidHelpCard('Realtime Canvas Readout Interpretation', createSrcHelpMatrix(
+            ['Canvas Item', 'Engineering Meaning', 'Realtime Source / Formula', 'Cavitation Interpretation', 'Display Rule'],
+            [
+                [
+                    'Mode',
+                    'Short identifier for the selected SRC boundary type.',
+                    'Mapped from Source Type: Tank, Vessel, Header, Fixed, or Stand.',
+                    'Identifies which upstream physical boundary is providing suction energy.',
+                    'Always displayed.'
+                ],
+                [
+                    'Qout',
+                    'Volumetric flow leaving the SRC boundary or attached source boundary toward the pump suction network.',
+                    'Solved pump flow when the SRC contributes to a pump suction path; otherwise the SRC flow input is used when available.',
+                    'Flow controls suction velocity, Reynolds number, pipe friction, minor losses, and NPSHR through the pump operating point.',
+                    'Displayed as a boundary contribution, not as a separate pump performance result.'
+                ],
+                [
+                    'Psrc',
+                    'Absolute source pressure used to form pressure head.',
+                    'Psrc,abs = Pgauge + Patm for gauge input, or Psrc,abs = Pabsolute input. In inherited tank/vessel cases, pressure is taken from the attached equipment.',
+                    'Higher source pressure generally increases available suction head and improves NPSHa.',
+                    'Displayed for all SRC modes when pressure data are valid.'
+                ],
+                [
+                    'zSRC',
+                    'Effective source elevation or inherited liquid surface elevation.',
+                    'Manual SRC elevation for direct boundary modes; tank/vessel base elevation plus liquid level for inherited semantic boundaries.',
+                    'Higher source elevation relative to pump suction increases available suction head.',
+                    'Displayed for all SRC modes.'
+                ],
+                [
+                    'Hsrc',
+                    'Total source hydraulic head before suction path losses.',
+                    'Hsrc = Psrc,abs x 100000 / (rho x g) + zSRC + optional Hvel for an external-header static-pressure tie-in.',
+                    'Represents the upstream energy reservoir available before pipe, fitting, valve, and equipment losses.',
+                    'Displayed as source contribution only.'
+                ],
+                [
+                    'hLs',
+                    'Suction path head loss from the source boundary or attached source equipment to the pump suction.',
+                    'hLs = sum of suction-side pipe major loss, fitting/valve minor loss, and equipment pressure-drop head.',
+                    'Higher hLs directly reduces NPSHa at the pump suction.',
+                    'Displayed only when a solved pump suction path is detected; otherwise shown as unavailable.'
+                ],
+                [
+                    'NPSHa@P',
+                    'NPSH available calculated at the pump suction, shown on the SRC panel only as the result of SRC contribution to the pump suction path.',
+                    'NPSHa@P = Hsrc - hLs - zPump - Hv, using the pump suction datum and live fluid vapor-pressure head.',
+                    'This is the strongest SRC-side cavitation indicator, but the final cavitation verdict remains on the pump panel.',
+                    'Displayed when the SRC or its attached equipment is the upstream boundary of a solved pump path.'
+                ]
+            ],
+            'src-live-readout-matrix'
+        )),
         createSrcHelpSection('Boundary Data Source', createFluidHelpList([
             'Manual means NPSH uses the pressure and elevation entered directly on the SRC object.',
             'Inherit from Attached Equipment is valid only for Open Tank / Reservoir or Pressurized Vessel connected by a dashed semantic attachment to tank/vessel equipment.',
@@ -1585,13 +1646,69 @@ function createSrcHelpContent() {
             'For External Header, Fixed Flow Source, and Standalone Boundary Source, the boundary elevation is the Source/Tie-in Elevation entered on the SRC.',
             'Flow rate affects velocity, Reynolds number, friction factor, major loss, minor loss, and therefore the suction-loss term in NPSHa.'
         ])),
+        createSrcHelpSection('Canvas Panel Scope and Thesis Interpretation', createFluidHelpList([
+            'The SRC canvas panel is a suction-boundary contribution panel. It is not the final cavitation verdict panel.',
+            'The pump remains the formal location where NPSHr, NPSH margin, and NPSH ratio are evaluated, because those quantities depend on the selected pump curve and operating point.',
+            'For this reason, the SRC panel intentionally displays Mode, Qout, Psrc, zSRC, Hsrc, hLs, and NPSHa@P, while NPSHr, Margin, and Ratio remain on the pump panel.',
+            'NPSHa@P is labeled with the @P notation because the value is calculated at pump suction. The label prevents users from interpreting NPSHa as a property located inside the SRC object itself.',
+            'When the SRC is an Open Tank / Reservoir or Pressurized Vessel using inherited data, the SRC panel represents the inherited tank/vessel suction boundary contribution rather than an independent hydraulic-loss element.'
+        ]), true),
+        createSrcHelpSection('Equation / Dependency Map for SRC Live Panel', createSrcHelpMatrix(
+            ['Calculated Item', 'Equation Used', 'Main Inputs', 'Realtime Display', 'Engineering Purpose'],
+            [
+                [
+                    'Absolute source pressure',
+                    'Psrc,abs = Pgauge + Patm, or Psrc,abs = Pabsolute input.',
+                    'SRC pressure input basis, source pressure input, standard atmosphere, or inherited tank/vessel pressure.',
+                    'Psrc.',
+                    'Provides the pressure-head term in the suction energy balance.'
+                ],
+                [
+                    'Source pressure head',
+                    'Hp = Psrc,abs x 100000 / (rho x g).',
+                    'Absolute source pressure, effective fluid density, and gravitational acceleration.',
+                    'Used internally in Hsrc.',
+                    'Converts source pressure energy into hydraulic head.'
+                ],
+                [
+                    'Source hydraulic head',
+                    'Hsrc = Hp + zSRC + Hvel.',
+                    'Pressure head, source elevation, and optional velocity head for an external-header static-pressure tie-in.',
+                    'Hsrc.',
+                    'Represents upstream energy before suction losses.'
+                ],
+                [
+                    'Suction loss',
+                    'hLs = sum(hf + hm + equipment pressure-drop head) from source boundary to pump suction.',
+                    'Pipe length, diameter, roughness, fittings, valves, equipment losses, flow rate, density, and viscosity.',
+                    'hLs.',
+                    'Shows the energy removed before the fluid reaches the pump suction.'
+                ],
+                [
+                    'Vapor pressure head',
+                    'Hv = Pv x 100000 / (rho x g).',
+                    'Live Fluid Basis or SRC-temperature vapor pressure and density.',
+                    'Used internally; vapor pressure itself remains visible on the pump panel.',
+                    'Subtracts thermodynamic vaporization tendency from available suction head.'
+                ],
+                [
+                    'NPSH available at pump suction',
+                    'NPSHa@P = Hsrc - hLs - zPump - Hv.',
+                    'Source head, suction loss, pump suction elevation, and vapor pressure head.',
+                    'NPSHa@P.',
+                    'Confirms how the SRC boundary contributes to the pump suction NPSH calculation.'
+                ]
+            ],
+            'src-equation-map'
+        )),
         createSrcHelpSection('Recommended Engineering Workflow', createFluidHelpList([
             '1. Identify the physical suction source: open tank, pressurized vessel, external header, fixed-flow supply, or generic boundary.',
             '2. Select the SRC Source Type that represents that physical boundary.',
             '3. For tank/vessel sources where NPSH should use equipment data, use dashed attachment and set Boundary Data Source = Inherit from Attached Equipment.',
             '4. For header, fixed-flow, or standalone sources, enter pressure, pressure basis, elevation, temperature mode, and flow input on the SRC.',
             '5. Create a solid hydraulic path to the pump suction. Without a solid path, NPSH evaluation will remain incomplete or will report warnings only.',
-            '6. Review the pump calculation trace to confirm suction boundary, elevation basis, pressure basis, flow basis, and suction losses.'
+            '6. Review the SRC live panel to confirm Mode, Qout, Psrc, zSRC, Hsrc, hLs, and NPSHa@P.',
+            '7. Review the pump calculation trace to confirm suction boundary, elevation basis, pressure basis, flow basis, suction losses, NPSHr, margin, and ratio.'
         ])),
         createSrcHelpSection('Common Modeling Errors to Avoid', createFluidHelpList([
             'Treating a dashed SRC-to-tank/vessel attachment as a pipe. Dashed attachment is not a pressure-loss path.',
@@ -1608,6 +1725,273 @@ function createSrcHelpContent() {
 function openSrcHelp() {
     openTaskWindow('SRC Boundary Guidance', createSrcHelpContent(), {
         bodyClass: 'fluid-help-body src-help-body',
+        resetScroll: true,
+        resetPosition: true
+    });
+}
+
+function createSnkHelpMatrix(labels = [], rows = [], className = '') {
+    const matrix = document.createElement('div');
+    matrix.className = `src-decision-matrix snk-decision-matrix ${className}`.trim();
+
+    const header = document.createElement('div');
+    header.className = 'src-decision-header';
+    labels.forEach(label => {
+        const cell = document.createElement('div');
+        cell.textContent = label;
+        header.appendChild(cell);
+    });
+    matrix.appendChild(header);
+
+    rows.forEach(row => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'src-decision-row';
+        row.forEach((value, index) => {
+            const cell = document.createElement('div');
+            cell.className = 'src-decision-cell';
+            cell.dataset.label = labels[index];
+            cell.textContent = value;
+            rowEl.appendChild(cell);
+        });
+        matrix.appendChild(rowEl);
+    });
+
+    return matrix;
+}
+
+function createSnkDecisionMatrix(rows = []) {
+    return createSnkHelpMatrix(
+        ['SNK Mode', 'Primary User Input', 'Solver Role', 'Pump / NPSH Effect', 'Typical Use'],
+        rows
+    );
+}
+
+function createSnkHelpContent() {
+    const root = document.createElement('div');
+    root.className = 'fluid-help-layout src-help-layout snk-help-layout';
+
+    root.append(
+        createFluidHelpCard('Fundamental SNK Boundary Concept', createSrcHelpTextBlock([
+            'SNK represents the downstream Fluid Out Boundary of the modeled hydraulic network. It defines how fluid leaves the system after the pump, piping, fittings, valves, and equipment have imposed their hydraulic losses.',
+            'SNK is not a restriction by itself. Discharge restriction is generated by the actual modeled pipe length, fittings, valves, heat exchangers, vessels, and elevation changes between the pump discharge and the SNK.',
+            'Although NPSHA is evaluated at the pump suction, the SNK boundary can still influence cavitation risk indirectly. A downstream pressure boundary or flow demand changes the pump operating flow. Changed flow changes suction loss and NPSHR; therefore NPSH margin can change.',
+            'For this reason, the canvas SNK readout is intentionally focused on downstream boundary pressure, flow, elevation, discharge loss, vapor-pressure margin, and the pump NPSH margin when a downstream pump relationship is detected.'
+        ])),
+        createFluidHelpCard('SNK Boundary Selection Matrix', createSnkDecisionMatrix([
+            [
+                'Free Outlet / Atmospheric Discharge',
+                'Outlet elevation only. The outlet pressure is fixed at atmospheric pressure: 0 bar g / 1.01325 bar a.',
+                'The pump operating point is found from pump curve versus system curve. Flow is solved from the complete hydraulic network.',
+                'Lower downstream pressure often allows higher flow. Higher flow can increase suction losses and NPSHR, reducing NPSH margin.',
+                'Open discharge, drain to atmosphere, vented tank inlet, or pipe discharging freely.'
+            ],
+            [
+                'Outlet Pressure Boundary',
+                'Specified outlet/reference pressure, pressure basis, pipe pressure type, and outlet elevation.',
+                'The specified downstream pressure/elevation define the discharge boundary head. The pump flow is solved against that system head and discharge losses.',
+                'Higher downstream pressure usually shifts the pump operating point to lower flow. Lower flow can reduce suction loss and NPSHR, but may increase required pump head.',
+                'Discharge to a pressurized header, downstream vessel, controlled receiver, or specified battery-limit pressure.'
+            ],
+            [
+                'Flow Demand Boundary',
+                'Specified discharge flow demand. Reference pressure is advisory; the application reports the pressure/head consequence.',
+                'The pump is evaluated at the demanded flow. Required discharge pressure/head is calculated from pump head, suction boundary, and discharge losses.',
+                'If demanded flow is high, NPSHR and suction losses increase. The pump may fail head requirement or NPSH margin even when the downstream pressure is not prescribed.',
+                'Known process demand, fixed consumer load, or design-point verification.'
+            ]
+        ])),
+        createFluidHelpCard('Realtime Canvas Readout Interpretation', createSnkHelpMatrix(
+            ['Canvas Item', 'Engineering Meaning', 'Displayed For', 'Realtime Source / Formula', 'Cavitation Interpretation'],
+            [
+                [
+                    'Mode',
+                    'Short boundary mode identifier: Free, P-Bnd, or Flow.',
+                    'All SNK modes.',
+                    'Mapped from Boundary Mode selected in the SNK Object Properties.',
+                    'Defines whether the downstream condition is atmospheric, pressure-specified, or flow-imposed.'
+                ],
+                [
+                    'Qout',
+                    'Outlet volumetric flow leaving the modeled network through the SNK.',
+                    'All SNK modes.',
+                    'Taken from the solved terminal pipe flow connected to SNK.',
+                    'Higher flow generally increases friction losses, suction losses, and NPSHR; this can reduce NPSH margin.'
+                ],
+                [
+                    'Qdem',
+                    'Specified discharge flow demand imposed by the downstream consumer.',
+                    'Flow Demand Boundary only.',
+                    'User input from SNK Flow Demand. The pump is evaluated at this flow.',
+                    'A high demand can force the pump into high-flow operation where NPSHR and suction losses become more severe.'
+                ],
+                [
+                    'Pout',
+                    'Absolute outlet boundary pressure for atmospheric or specified-pressure discharge.',
+                    'Free Outlet and Outlet Pressure Boundary.',
+                    'Free Outlet: Pout = Patm. Pressure Boundary: Pout,abs = Pinput + Patm for gauge input, or Pinput for absolute input.',
+                    'The outlet pressure itself is not NPSHA, but it shifts the pump operating point through the discharge system head.'
+                ],
+                [
+                    'Preq',
+                    'Required outlet pressure calculated as a consequence of a fixed flow demand.',
+                    'Flow Demand Boundary only.',
+                    'Calculated from pump head, suction boundary head, pump elevation, discharge loss, outlet elevation, and velocity head.',
+                    'If Preq is physically unrealistic or very low, the selected demand may be outside a credible pump/system operating condition.'
+                ],
+                [
+                    'zSNK',
+                    'Outlet elevation of the downstream boundary relative to the model datum.',
+                    'Free Outlet and Outlet Pressure Boundary.',
+                    'User input from SNK Elevation.',
+                    'A higher downstream elevation increases system head and can shift the pump operating flow.'
+                ],
+                [
+                    'HSNK',
+                    'Total hydraulic head represented by the SNK boundary.',
+                    'Free Outlet and Outlet Pressure Boundary.',
+                    'HSNK = Hp + zSNK + Hvel for static pressure; HSNK = Hp + zSNK for stagnation pressure.',
+                    'This head is used by the system curve; the resulting flow affects suction losses and NPSH margin.'
+                ],
+                [
+                    'hLd',
+                    'Discharge path head loss from pump discharge to SNK.',
+                    'All SNK modes when connected to a solved pump path.',
+                    'Summation of major and minor losses in the discharge path: pipe friction, fittings, valves, and equipment losses.',
+                    'Discharge loss changes pump operating flow. It does not subtract directly from NPSHA, but it can move the pump to a safer or riskier operating point.'
+                ],
+                [
+                    'Pv',
+                    'Fluid vapor pressure from the active Fluid Basis.',
+                    'All SNK modes.',
+                    'Taken from the active fluid property model at the current Fluid Basis temperature.',
+                    'Used as the thermodynamic reference for vaporization. In pump NPSH, vapor pressure is subtracted as vapor pressure head.'
+                ],
+                [
+                    'P-Pv',
+                    'Outlet pressure margin above fluid vapor pressure.',
+                    'All SNK modes.',
+                    'P-Pv = Pout,abs - Pv, or Preq - Pv for Flow Demand Boundary.',
+                    'This is an outlet vapor-pressure warning indicator, not the pump NPSHA. A small or negative value indicates possible outlet flashing or nonphysical boundary pressure.'
+                ],
+                [
+                    'NPSHm',
+                    'Pump NPSH margin associated with the pump connected upstream of this SNK.',
+                    'Flow Demand Boundary live panel; also available in SNK trace when pump path is detected.',
+                    'NPSHm = NPSHA - NPSHR from the pump calculation after the SNK condition shifts the operating point.',
+                    'This is the most direct SNK-to-pump cavitation indicator. Positive margin is required; project criteria may require additional margin or ratio.'
+                ]
+            ],
+            'snk-live-readout-matrix'
+        )),
+        createSrcHelpSection('How Each SNK Mode Affects the Pump', createFluidHelpList([
+            'Free Outlet / Atmospheric Discharge fixes the downstream pressure at atmosphere. The solver then calculates the pump operating point from available pump head versus total system head.',
+            'Outlet Pressure Boundary fixes the downstream pressure and elevation. The pump must provide enough head to overcome suction losses, discharge losses, elevation difference, and the specified outlet pressure head.',
+            'Flow Demand Boundary fixes the operating flow. The application then calculates the pressure/head that would be required at the outlet and checks whether the pump curve and NPSH margin remain acceptable.',
+            'SNK does not directly enter the NPSHA equation as a suction boundary term. Its influence is through the pump operating point: flow affects friction losses, suction pressure at the pump, NPSHR, power, and cavitation margin.'
+        ]), true),
+        createSrcHelpSection('Equation / Dependency Map for Realtime Results', createSnkHelpMatrix(
+            ['Calculated Item', 'Equation Used', 'Main Inputs', 'Realtime Display', 'Engineering Purpose'],
+            [
+                [
+                    'Absolute outlet pressure',
+                    'Pabs = Pinput + Patm for gauge pressure; Pabs = Pinput for absolute pressure.',
+                    'SNK pressure input basis, SNK pressure input, standard atmosphere.',
+                    'Pout or Preq.',
+                    'Converts all pressure boundary calculations to absolute pressure, which is required for vapor-pressure comparison.'
+                ],
+                [
+                    'Pressure head',
+                    'Hp = Pabs x 100000 / (rho x g).',
+                    'Absolute pressure, Fluid Basis density, gravitational acceleration.',
+                    'Used internally in HSNK and trace.',
+                    'Transforms pressure energy into hydraulic head for Bernoulli/system-curve calculations.'
+                ],
+                [
+                    'Static-boundary hydraulic head',
+                    'HSNK = Hp + zSNK + v^2 / (2g).',
+                    'Pressure head, SNK elevation, terminal pipe velocity.',
+                    'HSNK.',
+                    'Represents the total downstream boundary head when the specified pressure is static pressure.'
+                ],
+                [
+                    'Stagnation-boundary hydraulic head',
+                    'HSNK = Hp + zSNK.',
+                    'Pressure head and SNK elevation.',
+                    'HSNK.',
+                    'Avoids double-counting velocity head when the boundary pressure is already total/stagnation pressure.'
+                ],
+                [
+                    'Discharge loss',
+                    'hLd = sum(hf + hm + equipment pressure-drop head) along pump discharge to SNK.',
+                    'Pipe length, diameter, roughness, fittings, valves, heat exchangers, vessels, flow rate, density, viscosity.',
+                    'hLd.',
+                    'Quantifies downstream hydraulic resistance that shifts the pump operating point.'
+                ],
+                [
+                    'Flow-demand required pressure',
+                    'Preq is back-calculated from pump head, suction boundary head, suction loss, discharge loss, outlet elevation, and terminal velocity head.',
+                    'Pump curve at Qdem, SRC boundary, suction path, discharge path, SNK elevation.',
+                    'Preq.',
+                    'Shows whether the demanded flow is hydraulically credible for the selected pump and network.'
+                ],
+                [
+                    'Outlet vapor-pressure margin',
+                    'P-Pv = Pout,abs - Pv, or Preq - Pv for flow demand.',
+                    'Displayed outlet pressure and Fluid Basis vapor pressure.',
+                    'P-Pv.',
+                    'Screens whether the downstream outlet pressure approaches the fluid vapor pressure.'
+                ],
+                [
+                    'Pump NPSH margin',
+                    'NPSHm = NPSHA - NPSHR.',
+                    'Pump suction hydraulic snapshot, vapor pressure head, pump NPSHR model or curve.',
+                    'NPSHm.',
+                    'Primary cavitation margin indicator after the SNK condition has shifted the operating point.'
+                ]
+            ],
+            'snk-equation-map'
+        )),
+        createSrcHelpSection('Calculation Basis Used by the Application', createFluidHelpList([
+            'Absolute pressure is used for pressure-head calculations. Gauge pressure is converted by adding standard atmospheric pressure.',
+            'Pressure head is calculated as Hp = Pabs x 100000 / (rho x g). Elevation head is the SNK outlet elevation relative to the project datum.',
+            'For Static pipe pressure type, terminal velocity head is added when converting the outlet static boundary to total hydraulic head. For Stagnation pressure type, velocity head is already included.',
+            'For Free Outlet, Pout is set to atmospheric pressure. The user-entered pressure field is intentionally ignored so the model remains physically consistent.',
+            'For Flow Demand, Qpump is set by the SNK demand. Required downstream pressure is a result, not the independent boundary constraint.',
+            'The displayed P-Pv value is an outlet pressure margin above vapor pressure. It is useful for detecting potential downstream flashing, but it must not be interpreted as pump NPSHA.',
+            'The pump NPSH margin remains the controlling cavitation metric: NPSHm = NPSHA - NPSHR. SNK affects this value indirectly by changing the operating flow and hydraulic losses.'
+        ])),
+        createSrcHelpSection('Discussion Summary for Thesis Defense', createFluidHelpList([
+            'SNK shall be understood as a downstream Fluid Out Boundary, not as a component that automatically creates restriction.',
+            'The physical location of SNK relative to the pump matters because discharge piping, fittings, valves, equipment losses, and elevation between pump and SNK define the downstream system curve.',
+            'It is not good practice to impose both outlet pressure and outlet flow unless the model is intentionally checking an over-specified design condition. Normally, choose one independent downstream condition: atmospheric outlet, pressure boundary, or flow demand.',
+            'For Free Outlet and Outlet Pressure Boundary, the pump operating point is solved from the pump curve and system curve. The resulting flow then determines NPSHR and suction losses.',
+            'For Flow Demand Boundary, the flow is imposed by the downstream consumer. The application reports the required pressure/head consequence and evaluates whether the pump NPSH margin remains acceptable at that flow.',
+            'A downstream boundary does not appear as a direct positive or negative term inside the suction-side NPSHA expression. Its effect enters through operating flow, suction loss, and pump NPSHR.'
+        ]), true),
+        createSrcHelpSection('Recommended Engineering Workflow', createFluidHelpList([
+            '1. Decide what physically exists downstream of the pump: atmosphere, pressure receiver/header, or fixed process demand.',
+            '2. Select the SNK mode that represents that physical downstream condition.',
+            '3. Enter only the independent boundary data for that mode. Do not force both pressure and flow unless the case is intentionally being checked as an over-specified design condition.',
+            '4. Model discharge piping, fittings, valves, heat exchangers, and elevation changes explicitly because these items create the discharge restriction.',
+            '5. Run the simulation and review the pump live parameters: Q, H, NPSHA, NPSHR, margin, ratio, and cavitation status.',
+            '6. Review the SNK live canvas panel: Mode, Qout/Qdem, Pout/Preq, zSNK, HSNK, hLd, Pv, P-Pv, and NPSHm when available.',
+            '7. Use the SNK Calculation Trace to confirm boundary mode, pressure basis, elevation basis, dependency chain, and pump/NPSH influence.'
+        ])),
+        createSrcHelpSection('Literature and Defense Notes', createFluidHelpList([
+            'Bernoulli energy balance supports the use of pressure head, elevation head, velocity head, and head-loss terms between hydraulic boundaries.',
+            'NPSHA is a suction-side available head above vapor pressure. It depends on suction boundary head, pump elevation, vapor pressure head, and suction losses.',
+            'NPSHR is pump-performance dependent and normally increases with flow. Therefore a downstream boundary that shifts flow also changes cavitation risk.',
+            'Hydraulic Institute NPSH guidance is used as the pump-cavitation margin basis; fluid mechanics references support pressure/elevation/velocity head conversions.',
+            'Use the local references pdf_ref/ref1, ref2, ref3, and ref4 as academic backing for formulas, energy balance, cavitation context, and NPSH margin discussion.'
+        ]))
+    );
+
+    return root;
+}
+
+function openSnkHelp() {
+    openTaskWindow('SNK Boundary Guidance', createSnkHelpContent(), {
+        bodyClass: 'fluid-help-body src-help-body snk-help-body',
         resetScroll: true,
         resetPosition: true
     });

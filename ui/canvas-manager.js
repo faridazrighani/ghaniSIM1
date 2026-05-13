@@ -233,6 +233,306 @@ function buildPumpLiveParameterRows(node) {
     ];
 }
 
+function getSourceBoundaryShortMode(node) {
+    const sourceType = typeof getSourceTypeValue === 'function'
+        ? getSourceTypeValue(node, null, globalModel)
+        : (node?.props?.sourceType || '');
+    if (sourceType === 'Open Tank / Reservoir') return 'Tank';
+    if (sourceType === 'Pressurized Vessel') return 'Vessel';
+    if (sourceType === 'External Header / Pipe Tie-in') return 'Header';
+    if (sourceType === 'Fixed Flow Source') return 'Fixed';
+    if (sourceType === 'Standalone Boundary Source') return 'Stand';
+    return sourceType || '-';
+}
+
+function getSourceLiveLink(sourceId) {
+    if (typeof getSourceLinkForSource === 'function') return getSourceLinkForSource(sourceId);
+    if (typeof getSourceLink === 'function') return getSourceLink(sourceId);
+    return null;
+}
+
+function getSourceLivePumpImpact(sourceId) {
+    if (typeof globalModel === 'undefined') return null;
+    const source = globalModel[sourceId];
+    if (!source || source.type !== 'source') return null;
+
+    const link = getSourceLiveLink(sourceId);
+    const attachedTargetId = link?.targetId || '';
+    const pumpState = typeof window !== 'undefined' ? window.hydraulicNetworkState?.pumps || {} : {};
+
+    for (const pumpId of Object.keys(pumpState)) {
+        const state = pumpState[pumpId] || {};
+        const suctionPath = state.suctionPath || {};
+        const sourceMatches = suctionPath.boundaryId === sourceId;
+        const attachedMatches = attachedTargetId
+            && (suctionPath.boundaryId === attachedTargetId || suctionPath.boundaryAttachmentTargetId === attachedTargetId);
+        if (sourceMatches || attachedMatches) {
+            return {
+                pumpId,
+                pump: globalModel[pumpId],
+                state
+            };
+        }
+    }
+
+    return Object.keys(globalModel)
+        .filter(pumpId => globalModel[pumpId]?.type === 'pump')
+        .map(pumpId => {
+            const trace = globalModel[pumpId]?.results?.npshEvaluation?.calculationTrace;
+            const boundaryId = trace?.boundary?.id;
+            const attachedEquipment = trace?.boundary?.attachedEquipment;
+            const matches = boundaryId === sourceId
+                || (attachedTargetId && (boundaryId === attachedTargetId || attachedEquipment === attachedTargetId));
+            return matches ? { pumpId, pump: globalModel[pumpId], state: null } : null;
+        })
+        .find(Boolean) || null;
+}
+
+function getSourceLiveEffectiveFluid(source) {
+    const fluidProps = globalModel?.FLUID?.props || {};
+    if (typeof getFluidPropsAtSourceTemperature === 'function') {
+        return getFluidPropsAtSourceTemperature(source, fluidProps);
+    }
+    return fluidProps;
+}
+
+function getSourceLiveBoundarySnapshot(sourceId, node) {
+    const impact = getSourceLivePumpImpact(sourceId);
+    const boundary = typeof resolveSourceBoundaryData === 'function'
+        ? resolveSourceBoundaryData(sourceId, globalModel)
+        : null;
+    const effectiveFluid = getSourceLiveEffectiveFluid(node);
+    const traceBasis = impact?.pump?.results?.npshEvaluation?.calculationTrace?.basis || {};
+    const densityRaw = parseFloat(traceBasis.density ?? effectiveFluid?.density ?? globalModel?.FLUID?.props?.density);
+    const density = Number.isFinite(densityRaw) ? Math.max(densityRaw, 1) : 1000;
+    const pumpFlow = parseFloat(impact?.pump?.results?.flow);
+    const sourceFlow = parseFloat(node?.props?.flow);
+    const flow = Number.isFinite(pumpFlow) ? pumpFlow : (Number.isFinite(sourceFlow) ? sourceFlow : null);
+    const path = impact?.state?.suctionPath || null;
+    const velocityHead = typeof getSourceVelocityHeadForBoundary === 'function'
+        ? getSourceVelocityHeadForBoundary(node, flow || 0, path, globalModel)
+        : 0;
+    const pressureHead = boundary && Number.isFinite(boundary.pressureAbsBar) && typeof pressureBarToHead === 'function'
+        ? pressureBarToHead(boundary.pressureAbsBar, density)
+        : null;
+    const sourceHead = Number.isFinite(pressureHead) && Number.isFinite(boundary?.elevation)
+        ? pressureHead + boundary.elevation + (Number.isFinite(velocityHead) ? velocityHead : 0)
+        : null;
+    const suctionLoss = parseFloat(impact?.pump?.results?.suctionLoss ?? impact?.state?.snapshot?.suctionLoss);
+    const npsha = parseFloat(impact?.pump?.results?.npsha ?? impact?.state?.snapshot?.npsha);
+
+    return {
+        impact,
+        boundary,
+        density,
+        flow,
+        sourceHead,
+        suctionLoss: Number.isFinite(suctionLoss) ? suctionLoss : null,
+        npshaAtPump: Number.isFinite(npsha) ? npsha : null,
+        warnings: [...new Set([...(boundary?.warnings || []), ...(effectiveFluid?.warnings || [])].filter(Boolean))]
+    };
+}
+
+function getSourceOperatingVisualStatus(sourceId, node) {
+    if (!node || node.type !== 'source') return 'normal';
+    const snapshot = getSourceLiveBoundarySnapshot(sourceId, node);
+    if (snapshot.impact?.pump) return getPumpOperatingVisualStatus(snapshot.impact.pump);
+    if (snapshot.warnings.length > 0) return 'warning';
+    return 'incomplete';
+}
+
+function getSourceOperatingStatusTooltip(sourceId, node, visualStatus) {
+    const snapshot = getSourceLiveBoundarySnapshot(sourceId, node);
+    const boundary = snapshot.boundary || {};
+    const lines = [
+        `SRC status: ${snapshot.impact?.pumpId ? `Contributing to ${snapshot.impact.pumpId}` : 'No solved pump suction path'}`,
+        `Mode: ${getSourceBoundaryShortMode(node)}`
+    ];
+
+    addPumpStatusMetric(lines, 'Flow to suction network', snapshot.flow, 'm3/h');
+    addPumpStatusMetric(lines, 'Source pressure', boundary.pressureAbsBar, 'bar a');
+    addPumpStatusMetric(lines, 'Source elevation', boundary.elevation, 'm');
+    addPumpStatusMetric(lines, 'Source head', snapshot.sourceHead, 'm');
+    addPumpStatusMetric(lines, 'Suction loss to pump', snapshot.suctionLoss, 'm');
+    addPumpStatusMetric(lines, 'NPSHa at pump', snapshot.npshaAtPump, 'm');
+
+    if (snapshot.warnings.length > 0) {
+        lines.push(`Warnings: ${snapshot.warnings.join(' | ')}`);
+    } else if (visualStatus === 'incomplete') {
+        lines.push('Add a valid hydraulic path from SRC or attached equipment to pump suction to solve NPSHa@P.');
+    }
+
+    return lines.join('\n');
+}
+
+function buildSourceLiveParameterRows(sourceId, node) {
+    const snapshot = getSourceLiveBoundarySnapshot(sourceId, node);
+    const boundary = snapshot.boundary || {};
+    const flowUnit = getPumpLiveDisplayUnit('flow');
+    const headUnit = getPumpLiveDisplayUnit('head');
+    const pressureAbsUnit = getPumpLiveDisplayUnit('pressureAbs');
+    const flowValue = (value) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, 'flow', 1) : '-'
+    );
+    const pressureValue = (value) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, 'pressureAbs', 3) : '-'
+    );
+    const headValue = (value) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, 'head', 1) : '-'
+    );
+
+    return [
+        { label: 'Mode', title: 'SRC boundary mode', value: getSourceBoundaryShortMode(node), unit: '' },
+        { label: 'Qout', title: 'Flow leaving the SRC boundary or attached source boundary toward pump suction', value: flowValue(snapshot.flow), unit: flowUnit },
+        { label: 'Psrc', title: 'Absolute source boundary pressure used for suction-head calculation', value: pressureValue(boundary.pressureAbsBar), unit: pressureAbsUnit },
+        { label: 'zSRC', title: 'Effective source elevation or inherited liquid surface elevation', value: headValue(boundary.elevation), unit: headUnit },
+        { label: 'Hsrc', title: 'Total source hydraulic head before suction losses', value: headValue(snapshot.sourceHead), unit: headUnit },
+        { label: 'hLs', title: 'Suction path loss from source boundary to pump suction', value: headValue(snapshot.suctionLoss), unit: headUnit },
+        { label: 'NPSHa@P', title: `NPSH available at pump suction${snapshot.impact?.pumpId ? ` ${snapshot.impact.pumpId}` : ''}`, value: headValue(snapshot.npshaAtPump), unit: headUnit }
+    ];
+}
+
+function getSinkBoundaryShortMode(node) {
+    const mode = typeof getSinkBoundaryModeValue === 'function'
+        ? getSinkBoundaryModeValue(node)
+        : (node?.props?.boundaryMode || '');
+    if (mode === 'Free Outlet / Atmospheric Discharge') return 'Free';
+    if (mode === 'Outlet Pressure Boundary' || mode === 'Outlet Pressure') return 'P-Bnd';
+    if (mode === 'Flow Demand Boundary' || mode === 'Flow Demand') return 'Flow';
+    return mode || '-';
+}
+
+function isSinkLiveFlowDemand(node) {
+    if (typeof isSinkFlowDemandBoundary === 'function') return isSinkFlowDemandBoundary(node);
+    return ['Flow Demand', 'Flow Demand Boundary'].includes(node?.props?.boundaryMode);
+}
+
+function getSinkLiveSelectedPressure(node) {
+    const results = node?.results || {};
+    const calculatedPressure = parseFloat(results.calculatedPressure);
+    const boundaryPressure = parseFloat(results.boundaryPressure);
+    if (isSinkLiveFlowDemand(node) && Number.isFinite(calculatedPressure)) return calculatedPressure;
+    if (Number.isFinite(boundaryPressure)) return boundaryPressure;
+    if (Number.isFinite(calculatedPressure)) return calculatedPressure;
+    if (typeof getSinkBoundaryAbsolutePressureBar === 'function') {
+        const pressure = getSinkBoundaryAbsolutePressureBar(node);
+        return Number.isFinite(pressure) ? pressure : null;
+    }
+    return null;
+}
+
+function getSinkLivePumpImpact(sinkId) {
+    if (typeof globalModel === 'undefined') return null;
+    return Object.keys(globalModel)
+        .map(nodeId => globalModel[nodeId])
+        .find(node => node?.type === 'pump' && node.results?.downstreamBoundary === sinkId) || null;
+}
+
+function getSinkLiveVaporPressure() {
+    if (typeof globalModel === 'undefined') return null;
+    const vaporPressure = parseFloat(globalModel.FLUID?.props?.vaporPressure);
+    return Number.isFinite(vaporPressure) ? vaporPressure : null;
+}
+
+function getSinkOperatingVisualStatus(node) {
+    if (!node || node.type !== 'sink') return 'normal';
+    const results = node.results || {};
+    const status = String(results.status || '').trim().toLowerCase();
+    const warnings = Array.isArray(results.warnings) ? results.warnings.filter(Boolean) : [];
+    const selectedPressure = getSinkLiveSelectedPressure(node);
+    const vaporPressure = getSinkLiveVaporPressure();
+
+    if (Number.isFinite(selectedPressure) && Number.isFinite(vaporPressure) && selectedPressure <= vaporPressure) {
+        return 'risk';
+    }
+    if (status.includes('inactive') || node.props?.active === 'Inactive') return 'incomplete';
+    if (
+        status === '-'
+        || warnings.some(warning => /not connected|no solved|must be greater|incomplete/i.test(String(warning)))
+    ) {
+        return 'incomplete';
+    }
+    if (status === 'warning' || warnings.length > 0) return 'warning';
+    if (status === 'ok') return 'safe';
+    return 'normal';
+}
+
+function getSinkOperatingStatusTooltip(nodeId, node, visualStatus) {
+    const results = node?.results || {};
+    const impactPump = getSinkLivePumpImpact(nodeId);
+    const selectedPressure = getSinkLiveSelectedPressure(node);
+    const vaporPressure = getSinkLiveVaporPressure();
+    const pressureMargin = Number.isFinite(selectedPressure) && Number.isFinite(vaporPressure)
+        ? selectedPressure - vaporPressure
+        : null;
+    const lines = [
+        `SNK status: ${results.status || visualStatus || 'Review downstream boundary'}`,
+        `Mode: ${getSinkBoundaryShortMode(node)}`
+    ];
+
+    addPumpStatusMetric(lines, isSinkLiveFlowDemand(node) ? 'Required outlet pressure' : 'Outlet pressure', selectedPressure, 'bar a');
+    addPumpStatusMetric(lines, 'Outlet flow', results.flow, 'm3/h');
+    addPumpStatusMetric(lines, 'SNK hydraulic head', results.hydraulicHead, 'm');
+    addPumpStatusMetric(lines, 'Discharge loss', impactPump?.results?.dischargeLoss, 'm');
+    addPumpStatusMetric(lines, 'Vapor pressure', vaporPressure, 'bar a');
+    addPumpStatusMetric(lines, 'Outlet pressure minus vapor pressure', pressureMargin, 'bar');
+    addPumpStatusMetric(lines, 'Pump NPSH margin', impactPump?.results?.npshMargin, 'm');
+
+    if (results.warnings?.length) {
+        lines.push(`Warnings: ${results.warnings.join(' | ')}`);
+    }
+
+    return lines.join('\n');
+}
+
+function buildSinkLiveParameterRows(nodeId, node) {
+    const results = node.results || {};
+    const impactPump = getSinkLivePumpImpact(nodeId);
+    const isFlowDemand = isSinkLiveFlowDemand(node);
+    const flowUnit = getPumpLiveDisplayUnit('flow');
+    const headUnit = getPumpLiveDisplayUnit('head');
+    const pressureAbsUnit = getPumpLiveDisplayUnit('pressureAbs');
+    const pressureDeltaUnit = getPumpLiveDisplayUnit('pressureDelta');
+    const selectedPressure = getSinkLiveSelectedPressure(node);
+    const vaporPressure = getSinkLiveVaporPressure();
+    const pressureMargin = Number.isFinite(selectedPressure) && Number.isFinite(vaporPressure)
+        ? selectedPressure - vaporPressure
+        : null;
+    const pressureValue = (value, quantity = 'pressureAbs', digits = 3, options = {}) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, quantity, digits, options) : '-'
+    );
+    const headValue = (value, options = {}) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, 'head', 1, options) : '-'
+    );
+    const flowValue = (value) => (
+        Number.isFinite(parseFloat(value)) ? getPumpLiveDisplayValue(value, 'flow', 1) : '-'
+    );
+
+    if (isFlowDemand) {
+        return [
+            { label: 'Mode', title: 'SNK boundary mode', value: getSinkBoundaryShortMode(node), unit: '' },
+            { label: 'Qdem', title: 'Specified discharge flow demand', value: flowValue(node.props?.demandFlow), unit: flowUnit },
+            { label: 'Qout', title: 'Solved outlet flow rate', value: flowValue(results.flow), unit: flowUnit },
+            { label: 'Preq', title: 'Required outlet pressure calculated from pump and network', value: pressureValue(selectedPressure), unit: pressureAbsUnit },
+            { label: 'hLd', title: 'Discharge path head loss from pump to SNK', value: headValue(impactPump?.results?.dischargeLoss), unit: headUnit },
+            { label: 'Pv', title: 'Fluid Basis vapor pressure', value: pressureValue(vaporPressure), unit: pressureAbsUnit },
+            { label: 'P-Pv', title: 'Outlet pressure margin above vapor pressure', value: pressureValue(pressureMargin, 'pressureDelta', 3, { showSign: true }), unit: pressureDeltaUnit },
+            { label: 'NPSHm', title: 'Pump NPSH margin influenced by this downstream boundary', value: headValue(impactPump?.results?.npshMargin, { showSign: true }), unit: headUnit }
+        ];
+    }
+
+    return [
+        { label: 'Mode', title: 'SNK boundary mode', value: getSinkBoundaryShortMode(node), unit: '' },
+        { label: 'Qout', title: 'Solved outlet flow rate', value: flowValue(results.flow), unit: flowUnit },
+        { label: 'Pout', title: 'Outlet boundary pressure in absolute units', value: pressureValue(selectedPressure), unit: pressureAbsUnit },
+        { label: 'zSNK', title: 'SNK outlet elevation', value: headValue(node.props?.elevation), unit: headUnit },
+        { label: 'HSNK', title: 'SNK hydraulic head', value: headValue(results.hydraulicHead), unit: headUnit },
+        { label: 'hLd', title: 'Discharge path head loss from pump to SNK', value: headValue(impactPump?.results?.dischargeLoss), unit: headUnit },
+        { label: 'Pv', title: 'Fluid Basis vapor pressure', value: pressureValue(vaporPressure), unit: pressureAbsUnit },
+        { label: 'P-Pv', title: 'Outlet pressure margin above vapor pressure', value: pressureValue(pressureMargin, 'pressureDelta', 3, { showSign: true }), unit: pressureDeltaUnit }
+    ];
+}
+
 function updatePumpLiveParameterPanel(el, node, visualStatus) {
     const panel = el.querySelector('.pump-live-params');
     if (!panel) return;
@@ -264,6 +564,82 @@ function updatePumpLiveParameterPanel(el, node, visualStatus) {
 
         const unit = document.createElement('span');
         unit.className = 'pump-live-param-unit';
+        unit.textContent = row.value === '-' ? '' : row.unit;
+
+        item.append(label, value, unit);
+        panel.appendChild(item);
+    });
+}
+
+function updateSourceLiveParameterPanel(el, nodeId, node, visualStatus) {
+    const panel = el.querySelector('.source-live-params');
+    if (!panel) return;
+
+    panel.classList.remove(
+        'source-live-params-safe',
+        'source-live-params-warning',
+        'source-live-params-risk',
+        'source-live-params-incomplete'
+    );
+    if (visualStatus !== 'normal') {
+        panel.classList.add(`source-live-params-${visualStatus}`);
+    }
+
+    const rows = buildSourceLiveParameterRows(nodeId, node);
+    panel.replaceChildren();
+    rows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'source-live-param-row';
+        item.title = row.title;
+
+        const label = document.createElement('span');
+        label.className = 'source-live-param-label';
+        label.textContent = row.label;
+
+        const value = document.createElement('strong');
+        value.className = 'source-live-param-value';
+        value.textContent = row.value;
+
+        const unit = document.createElement('span');
+        unit.className = 'source-live-param-unit';
+        unit.textContent = row.value === '-' ? '' : row.unit;
+
+        item.append(label, value, unit);
+        panel.appendChild(item);
+    });
+}
+
+function updateSinkLiveParameterPanel(el, nodeId, node, visualStatus) {
+    const panel = el.querySelector('.sink-live-params');
+    if (!panel) return;
+
+    panel.classList.remove(
+        'sink-live-params-safe',
+        'sink-live-params-warning',
+        'sink-live-params-risk',
+        'sink-live-params-incomplete'
+    );
+    if (visualStatus !== 'normal') {
+        panel.classList.add(`sink-live-params-${visualStatus}`);
+    }
+
+    const rows = buildSinkLiveParameterRows(nodeId, node);
+    panel.replaceChildren();
+    rows.forEach(row => {
+        const item = document.createElement('div');
+        item.className = 'sink-live-param-row';
+        item.title = row.title;
+
+        const label = document.createElement('span');
+        label.className = 'sink-live-param-label';
+        label.textContent = row.label;
+
+        const value = document.createElement('strong');
+        value.className = 'sink-live-param-value';
+        value.textContent = row.value;
+
+        const unit = document.createElement('span');
+        unit.className = 'sink-live-param-unit';
         unit.textContent = row.value === '-' ? '' : row.unit;
 
         item.append(label, value, unit);
@@ -560,6 +936,22 @@ function updateObjectOperatingStatusVisual(nodeId) {
         return;
     }
 
+    if (node.type === 'sink') {
+        const sinkVisualStatus = getSinkOperatingVisualStatus(node);
+        el.dataset.operatingStatus = sinkVisualStatus;
+        el.title = getSinkOperatingStatusTooltip(nodeId, node, sinkVisualStatus);
+        updateSinkLiveParameterPanel(el, nodeId, node, sinkVisualStatus);
+        return;
+    }
+
+    if (node.type === 'source') {
+        const sourceVisualStatus = getSourceOperatingVisualStatus(nodeId, node);
+        el.dataset.operatingStatus = sourceVisualStatus;
+        el.title = getSourceOperatingStatusTooltip(nodeId, node, sourceVisualStatus);
+        updateSourceLiveParameterPanel(el, nodeId, node, sourceVisualStatus);
+        return;
+    }
+
     delete el.dataset.operatingStatus;
     el.title = '';
 }
@@ -775,6 +1167,12 @@ function getObjectMarkup(type, nodeId, desc) {
     const pumpLivePanel = type === 'pump'
         ? '<div class="pump-live-params" aria-label="Live pump parameters"></div>'
         : '';
+    const sourceLivePanel = type === 'source'
+        ? '<div class="source-live-params" aria-label="Live SRC boundary parameters"></div>'
+        : '';
+    const sinkLivePanel = type === 'sink'
+        ? '<div class="sink-live-params" aria-label="Live SNK boundary parameters"></div>'
+        : '';
 
     return `
         <div class="object-icon">
@@ -784,6 +1182,8 @@ function getObjectMarkup(type, nodeId, desc) {
         ${statusBadge}
         <div class="object-name">${safeNodeId}<br><span class="object-desc">${safeDesc}</span></div>
         ${pumpLivePanel}
+        ${sourceLivePanel}
+        ${sinkLivePanel}
         ${type === 'lineMonitor' ? getLineMonitorReadoutMarkup() : ''}
     `;
 }

@@ -1032,7 +1032,9 @@ textarea {
     color: #475569;
 }
 
-.pump-live-params {
+.pump-live-params,
+.source-live-params,
+.sink-live-params {
     position: absolute;
     top: 58px;
     left: 50%;
@@ -1057,7 +1059,29 @@ textarea {
     pointer-events: none;
 }
 
+.sink-live-params {
+    min-width: 116px;
+    max-width: 146px;
+    border-left-color: #0ea5e9;
+}
+
+.source-live-params {
+    min-width: 122px;
+    max-width: 152px;
+    border-left-color: #0f766e;
+}
+
 .pump-live-params-safe {
+    border-left-color: #16a34a;
+    background: rgba(240, 253, 244, 0.96);
+}
+
+.source-live-params-safe {
+    border-left-color: #16a34a;
+    background: rgba(240, 253, 244, 0.96);
+}
+
+.sink-live-params-safe {
     border-left-color: #16a34a;
     background: rgba(240, 253, 244, 0.96);
 }
@@ -1067,7 +1091,27 @@ textarea {
     background: rgba(255, 247, 237, 0.96);
 }
 
+.source-live-params-warning {
+    border-left-color: #f97316;
+    background: rgba(255, 247, 237, 0.96);
+}
+
+.sink-live-params-warning {
+    border-left-color: #f97316;
+    background: rgba(255, 247, 237, 0.96);
+}
+
 .pump-live-params-risk {
+    border-left-color: #dc2626;
+    background: rgba(254, 242, 242, 0.96);
+}
+
+.source-live-params-risk {
+    border-left-color: #dc2626;
+    background: rgba(254, 242, 242, 0.96);
+}
+
+.sink-live-params-risk {
     border-left-color: #dc2626;
     background: rgba(254, 242, 242, 0.96);
 }
@@ -1077,26 +1121,44 @@ textarea {
     background: rgba(248, 250, 252, 0.96);
 }
 
-.pump-live-param-row {
+.source-live-params-incomplete {
+    border-left-color: #94a3b8;
+    background: rgba(248, 250, 252, 0.96);
+}
+
+.sink-live-params-incomplete {
+    border-left-color: #94a3b8;
+    background: rgba(248, 250, 252, 0.96);
+}
+
+.pump-live-param-row,
+.source-live-param-row,
+.sink-live-param-row {
     display: grid;
-    grid-template-columns: 32px minmax(30px, 1fr) auto;
+    grid-template-columns: 38px minmax(30px, 1fr) auto;
     align-items: baseline;
     column-gap: 4px;
     min-width: 0;
     white-space: nowrap;
 }
 
-.pump-live-param-label {
+.pump-live-param-label,
+.source-live-param-label,
+.sink-live-param-label {
     color: #334155;
 }
 
-.pump-live-param-value {
+.pump-live-param-value,
+.source-live-param-value,
+.sink-live-param-value {
     color: #0f172a;
     text-align: right;
     font-weight: 800;
 }
 
-.pump-live-param-unit {
+.pump-live-param-unit,
+.source-live-param-unit,
+.sink-live-param-unit {
     color: #475569;
     font-size: 8.5px;
     font-weight: 600;
@@ -4248,7 +4310,9 @@ select.prop-input-field {
         font-size: 9px;
     }
 
-    .pump-live-params {
+    .pump-live-params,
+    .source-live-params,
+    .sink-live-params {
         top: 54px;
         min-width: 104px;
         max-width: 124px;
@@ -4256,12 +4320,26 @@ select.prop-input-field {
         font-size: 8.8px;
     }
 
-    .pump-live-param-row {
-        grid-template-columns: 30px minmax(28px, 1fr) auto;
+    .sink-live-params {
+        min-width: 110px;
+        max-width: 132px;
+    }
+
+    .source-live-params {
+        min-width: 116px;
+        max-width: 140px;
+    }
+
+    .pump-live-param-row,
+    .source-live-param-row,
+    .sink-live-param-row {
+        grid-template-columns: 36px minmax(28px, 1fr) auto;
         column-gap: 3px;
     }
 
-    .pump-live-param-unit {
+    .pump-live-param-unit,
+    .source-live-param-unit,
+    .sink-live-param-unit {
         font-size: 8px;
     }
 

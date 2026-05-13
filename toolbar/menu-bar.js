@@ -588,6 +588,17 @@ function initMenuBar() {
             });
         }
 
+        const menuSnkHelp = document.getElementById('menu-snk-help');
+        if (menuSnkHelp) {
+            menuSnkHelp.addEventListener('click', (e) => {
+                e.preventDefault();
+                helpDropdown.classList.remove('show');
+                if (typeof openSnkHelp === 'function') {
+                    openSnkHelp();
+                }
+            });
+        }
+
         const menuFluidProperties = document.getElementById('menu-fluid-properties');
         const fluidPropertiesSubmenu = menuFluidProperties?.closest('.dropdown-submenu');
         if (menuFluidProperties && fluidPropertiesSubmenu) {

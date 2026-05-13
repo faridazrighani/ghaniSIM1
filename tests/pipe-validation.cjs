@@ -89,9 +89,34 @@ minorPipe.segments[0].fittingQuantity = 2;
 minorPipe.segments[0].fittingK = 0.5;
 minorPipe.segments[0].minorLoss = 1;
 const minorResult = evaluatePipe(minorPipe, 10)[0];
-assertClose('minor K total', minorResult.minorLossK, 2, 1e-12);
-assertClose('minor head loss', minorResult.minorLoss, 2 * velocityHead, 1e-9);
+assertClose('Add K overrides K each', minorPipe.segments[0].fittingK, 0, 1e-12);
+assertClose('minor K total', minorResult.minorLossK, 1, 1e-12);
+assertClose('minor head loss', minorResult.minorLoss, velocityHead, 1e-9);
 assertClose('total loss', minorResult.totalLoss, minorResult.majorLoss + minorResult.minorLoss, 1e-12);
+
+const presetAddKPipe = structuredClone(basePipe);
+presetAddKPipe.segments[0].fittingType = 'Gate valve - fully open';
+presetAddKPipe.segments[0].fittingQuantity = 3;
+presetAddKPipe.segments[0].fittingK = 0.2;
+presetAddKPipe.segments[0].minorLoss = 1.8;
+const presetAddKResult = evaluatePipe(presetAddKPipe, 10)[0];
+assertClose('preset Add K zeros K each', presetAddKPipe.segments[0].fittingK, 0, 1e-12);
+assertClose('preset Add K ignores quantity x K each', presetAddKResult.fittingTotalK, 0, 1e-12);
+assertClose('preset Add K total K', presetAddKResult.minorLossK, 1.8, 1e-12);
+assertClose('preset Add K minor head loss', presetAddKResult.minorLoss, 1.8 * velocityHead, 1e-9);
+
+['suction pipe', 'discharge pipe', 'utility pipe'].forEach((pipeRole, index) => {
+    const pipe = structuredClone(basePipe);
+    pipe.segments[0].name = pipeRole;
+    pipe.segments[0].fittingType = index === 1 ? 'Globe valve - fully open' : 'Gate valve - fully open';
+    pipe.segments[0].fittingQuantity = index + 1;
+    pipe.segments[0].fittingK = index === 1 ? 10 : 0.2;
+    pipe.segments[0].minorLoss = 1.25 + index;
+    const result = evaluatePipe(pipe, 10)[0];
+    assertClose(`${pipeRole} Add K zeros K each`, pipe.segments[0].fittingK, 0, 1e-12);
+    assertClose(`${pipeRole} Add K ignores quantity x K each`, result.fittingTotalK, 0, 1e-12);
+    assertClose(`${pipeRole} Add K total K`, result.minorLossK, pipe.segments[0].minorLoss, 1e-12);
+});
 
 const allowancePipe = structuredClone(basePipe);
 allowancePipe.roughnessAgingFactor = 2;
@@ -393,6 +418,8 @@ assert(taskProperties.includes('data-label="Formula"'), 'Expected responsive pip
 assert(taskProperties.includes('renderPipeMoodyChart'), 'Expected Moody chart renderer in pipe trace');
 assert(taskProperties.includes('Moody Chart / Friction Factor Check'), 'Expected Moody chart section label');
 assert(taskProperties.includes('Darcy friction factor'), 'Expected Moody chart to label Darcy friction factor');
+assert(taskProperties.includes('syncSegmentFittingKForAdditionalK(seg);'), 'Expected pipe segment initial render to zero K each when Add K is active');
+assert(taskProperties.includes('formatEngineeringValue(fittingKDisplayValue, 3)'), 'Expected K each input to render the Add K override value immediately');
 assert(objectProperties.includes('Pipe / Valve Compatibility'), 'Expected valve compatibility audit in object properties');
 assert(objectProperties.includes('Calculated Valve Readout'), 'Expected valve calculated readout section');
 assert(objectProperties.includes('renderValveCalculationTraceReport'), 'Expected valve calculation trace renderer');

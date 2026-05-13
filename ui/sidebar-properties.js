@@ -1693,13 +1693,18 @@ function renderSidebar(nodeId) {
                     return;
                 }
 
-                if (globalModel[n].type === 'sink' && ['boundaryMode', 'pressure', 'pressureInputBasis', 'pressureBasis', 'demandFlow'].includes(k)) {
+                if (globalModel[n].type === 'sink' && ['boundaryMode', 'pressure', 'pressureInputBasis', 'pressureBasis', 'demandFlow', 'elevation'].includes(k)) {
                     if (typeof normalizeSinkProps === 'function') normalizeSinkProps(globalModel[n]);
                     if (typeof updateSinkReadout === 'function') updateSinkReadout(n);
                     if (k === 'boundaryMode' || k === 'pressureInputBasis') {
                         renderSidebar(n);
+                    } else if (typeof getSinkBoundaryAbsolutePressureBar === 'function') {
+                        setSidebarReadout('sink-absolute-pressure', getSinkBoundaryAbsolutePressureBar(globalModel[n]), 'bar a');
                     } else if (typeof getNodeAbsolutePressureBar === 'function') {
                         setSidebarReadout('sink-absolute-pressure', getNodeAbsolutePressureBar(globalModel[n]), 'bar a');
+                    }
+                    if (typeof updateSinkCalculationTraceReadout === 'function') {
+                        updateSinkCalculationTraceReadout(n);
                     }
                     updateSimulation({ renderSidebarAfter: false });
                     return;
@@ -2234,12 +2239,37 @@ function renderSidebar(nodeId) {
             if (!Number.isFinite(parsed)) return '';
             return typeof convertFromDisplay === 'function' ? convertFromDisplay(parsed, quantity) : parsed;
         };
+        const segmentHasAdditionalK = (segment) => Math.max(0, parseFloat(segment?.minorLoss) || 0) > 0;
+        const syncSegmentFittingKForAdditionalK = (segment, row = null) => {
+            if (!segment) return;
+            const addKActive = segmentHasAdditionalK(segment);
+            if (addKActive) {
+                segment.fittingK = 0;
+            } else if (segment.fittingType !== PIPE_FITTING_CUSTOM) {
+                const fittingOption = getPipeFittingOption(segment.fittingType);
+                segment.fittingK = fittingOption.k || 0;
+            }
+
+            if (!row) return;
+            const fittingKInput = row.querySelector('[data-field="fittingK"]');
+            if (fittingKInput) {
+                fittingKInput.value = formatEngineeringValue(segment.fittingK || 0, 3);
+                fittingKInput.readOnly = addKActive || segment.fittingType !== PIPE_FITTING_CUSTOM;
+                fittingKInput.title = addKActive
+                    ? 'K each is zero because Add K is active for this segment.'
+                    : '';
+            }
+        };
 
         node.props.segments.forEach((seg, i) => {
+            syncSegmentFittingKForAdditionalK(seg);
             const result = segmentResultByIndex.get(i) || {};
             const profile = segmentProfileByIndex.get(i) || {};
             const diameterReadonly = seg.pipeSize !== 'Custom diameter' ? 'readonly' : '';
-            const fittingKReadonly = seg.fittingType !== PIPE_FITTING_CUSTOM ? 'readonly' : '';
+            const addKActive = segmentHasAdditionalK(seg);
+            const fittingKReadonly = addKActive || seg.fittingType !== PIPE_FITTING_CUSTOM ? 'readonly' : '';
+            const fittingKTitle = addKActive ? 'K each is zero because Add K is active for this segment.' : '';
+            const fittingKDisplayValue = addKActive ? 0 : (seg.fittingK || 0);
             const segmentElevationCells = showSegmentElevations ? `
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="startElevation" value="${displayPipeValue(seg.startElevation, 'head', 2)}" step="0.1"></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="endElevation" value="${displayPipeValue(seg.endElevation, 'head', 2)}" step="0.1"></td>
@@ -2268,7 +2298,7 @@ function renderSidebar(nodeId) {
                     <td class="segment-readout" data-segment-result="effectiveRoughnessMm">${displayPipeValue(result.effectiveRoughness || 0, 'roughness', 4)}</td>
                     <td><select class="segment-input" data-idx="${i}" data-field="fittingType" data-value="${escapeHtml(seg.fittingType)}">${fittingOptionsHtml}</select></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="fittingQuantity" value="${formatEngineeringValue(seg.fittingQuantity || 0, 0)}" step="1"></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="fittingK" value="${formatEngineeringValue(seg.fittingK || 0, 3)}" step="0.01" ${fittingKReadonly}></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="fittingK" value="${formatEngineeringValue(fittingKDisplayValue, 3)}" step="0.01" title="${escapeHtml(fittingKTitle)}" ${fittingKReadonly}></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="minorLoss" value="${formatEngineeringValue(seg.minorLoss || 0, 2)}" step="0.1"></td>
                     <td class="segment-readout" data-segment-result="minorLossK">${formatEngineeringValue(result.minorLossK, 2)}</td>
                     ${segmentElevationCells}
@@ -2366,6 +2396,7 @@ function renderSidebar(nodeId) {
             segTd.querySelectorAll('#pipeSegmentTable tbody tr').forEach((row, idx) => {
                 const result = updatedDetails.get(idx) || {};
                 const profile = updatedProfiles.get(idx) || {};
+                syncSegmentFittingKForAdditionalK(node.props.segments[idx], row);
                 const velocityCell = row.querySelector('[data-segment-result="velocity"]');
                 const reynoldsCell = row.querySelector('[data-segment-result="reynolds"]');
                 const flowRegimeCell = row.querySelector('[data-segment-result="flowRegime"]');
@@ -2441,14 +2472,20 @@ function renderSidebar(nodeId) {
                     segment.roughness = Math.max(0, internalPipeValue(e.target.value, 'roughness') || 0);
                     if (segment.material !== 'Custom roughness') segment.material = 'Custom roughness';
                 } else if (field === 'fittingK') {
-                    segment.routeFittingAuto = false;
-                    segment.fittingType = PIPE_FITTING_CUSTOM;
-                    segment.fittingK = Math.max(0, parseFloat(e.target.value) || 0);
-                    const fittingSelect = e.target.closest('tr')?.querySelector('[data-field="fittingType"]');
-                    if (fittingSelect) fittingSelect.value = PIPE_FITTING_CUSTOM;
+                    if (segmentHasAdditionalK(segment)) {
+                        segment.fittingK = 0;
+                        e.target.value = formatEngineeringValue(0, 3);
+                    } else {
+                        segment.routeFittingAuto = false;
+                        segment.fittingType = PIPE_FITTING_CUSTOM;
+                        segment.fittingK = Math.max(0, parseFloat(e.target.value) || 0);
+                        const fittingSelect = e.target.closest('tr')?.querySelector('[data-field="fittingType"]');
+                        if (fittingSelect) fittingSelect.value = PIPE_FITTING_CUSTOM;
+                    }
                 } else if (field === 'fittingQuantity' || field === 'minorLoss') {
                     segment.routeFittingAuto = false;
                     segment[field] = Math.max(0, parseFloat(e.target.value) || 0);
+                    syncSegmentFittingKForAdditionalK(segment, e.target.closest('tr'));
                 } else if (['startElevation', 'endElevation', 'highPointElevation'].includes(field)) {
                     const parsed = internalPipeValue(e.target.value, 'head');
                     segment[field] = Number.isFinite(parsed) ? parsed : '';
@@ -2487,6 +2524,7 @@ function renderSidebar(nodeId) {
                     } else if (!Number.isFinite(parseFloat(segment.fittingQuantity)) || parseFloat(segment.fittingQuantity) <= 0) {
                         segment.fittingQuantity = 1;
                     }
+                    syncSegmentFittingKForAdditionalK(segment);
                     normalizePipeProps(node.props);
                     updateSimulation({ renderSidebarAfter: false });
                     renderSidebar(nodeId);
