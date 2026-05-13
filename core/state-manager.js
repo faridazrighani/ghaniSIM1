@@ -168,6 +168,8 @@ function createDefaultResults(type) {
         dischargeLoss: 0,
         suctionVelocityHead: 0,
         vaporPressureHead: 0,
+        vaporPressureBasis: null,
+        vaporPressureLive: null,
         dominantSuctionLoss: '-',
         engineeringNotes: [],
         solveMode: '-',

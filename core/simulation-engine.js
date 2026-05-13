@@ -109,6 +109,8 @@ function resetPumpCalculatedResults(pump, status, warnings = []) {
     pump.results.dischargeLoss = null;
     pump.results.suctionVelocityHead = null;
     pump.results.vaporPressureHead = null;
+    pump.results.vaporPressureBasis = null;
+    pump.results.vaporPressureLive = null;
     pump.results.npshrSource = '-';
     pump.results.cavitationStatus = status;
     pump.results.dominantSuctionLoss = '-';
@@ -217,6 +219,16 @@ function applyPumpOperatingPointResults(pump, hydraulicContext, hydraulicSnapsho
     pump.results.dischargeLoss = hydraulicSnapshot.dischargeLoss.toFixed(2);
     pump.results.suctionVelocityHead = hydraulicSnapshot.suctionVelocityHead?.toFixed(3) ?? null;
     pump.results.vaporPressureHead = hydraulicSnapshot.vaporPressureHead?.toFixed(3) ?? null;
+    const basisVaporPressure = parseFloat(globalModel.FLUID?.props?.vaporPressure);
+    const liveVaporPressure = parseFloat(detailedNpshEvaluation?.calculationTrace?.basis?.vaporPressureBarA);
+    pump.results.vaporPressureBasis = Number.isFinite(basisVaporPressure)
+        ? basisVaporPressure.toFixed(6)
+        : null;
+    pump.results.vaporPressureLive = Number.isFinite(liveVaporPressure)
+        ? liveVaporPressure.toFixed(6)
+        : (Number.isFinite(hydraulicContext.vaporPressurePa)
+            ? (hydraulicContext.vaporPressurePa / 100000).toFixed(6)
+            : null);
     pump.results.dominantSuctionLoss = detailedNpshEvaluation?.dominantLoss || '-';
     pump.results.engineeringNotes = detailedNpshEvaluation?.notes || [];
     pump.results.npshEvaluation = detailedNpshEvaluation;
