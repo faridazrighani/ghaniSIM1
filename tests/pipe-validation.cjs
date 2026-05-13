@@ -420,6 +420,9 @@ assert(taskProperties.includes('Moody Chart / Friction Factor Check'), 'Expected
 assert(taskProperties.includes('Darcy friction factor'), 'Expected Moody chart to label Darcy friction factor');
 assert(taskProperties.includes('syncSegmentFittingKForAdditionalK(seg);'), 'Expected pipe segment initial render to zero K each when Add K is active');
 assert(taskProperties.includes('formatEngineeringValue(fittingKDisplayValue, 3)'), 'Expected K each input to render the Add K override value immediately');
+assert(taskProperties.includes('syncSegmentDiameterInputForPipeSize(seg);'), 'Expected pipe segment initial render to sync Custom diameter editability');
+assert(taskProperties.includes('diameterInput.readOnly = !isCustomDiameter'), 'Expected Custom diameter to make ID editable and standard NPS/Schedule to lock ID');
+assert(taskProperties.includes("syncSegmentDiameterInputForPipeSize(segment, e.target.closest('tr'))"), 'Expected pipe size changes to immediately update ID editability');
 assert(objectProperties.includes('Pipe / Valve Compatibility'), 'Expected valve compatibility audit in object properties');
 assert(objectProperties.includes('Calculated Valve Readout'), 'Expected valve calculated readout section');
 assert(objectProperties.includes('renderValveCalculationTraceReport'), 'Expected valve calculation trace renderer');

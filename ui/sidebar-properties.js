@@ -2239,6 +2239,28 @@ function renderSidebar(nodeId) {
             if (!Number.isFinite(parsed)) return '';
             return typeof convertFromDisplay === 'function' ? convertFromDisplay(parsed, quantity) : parsed;
         };
+        const isCustomPipeDiameterSize = (pipeSize) => getPipeSizeOption(pipeSize).label === 'Custom diameter';
+        const syncSegmentDiameterInputForPipeSize = (segment, row = null) => {
+            if (!segment) return;
+            const sizeOption = getPipeSizeOption(segment.pipeSize);
+            segment.pipeSize = sizeOption.label;
+            const isCustomDiameter = isCustomPipeDiameterSize(segment.pipeSize);
+            if (!isCustomDiameter && sizeOption.diameter) {
+                segment.diameter = sizeOption.diameter;
+            } else {
+                segment.diameter = Math.max(0, parseFloat(segment.diameter) || 0);
+            }
+
+            if (!row) return;
+            const diameterInput = row.querySelector('[data-field="diameter"]');
+            if (diameterInput) {
+                diameterInput.readOnly = !isCustomDiameter;
+                diameterInput.value = displayPipeValue(segment.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3);
+                diameterInput.title = isCustomDiameter
+                    ? 'User-entered internal diameter.'
+                    : 'Internal diameter follows the selected NPS / Schedule.';
+            }
+        };
         const segmentHasAdditionalK = (segment) => Math.max(0, parseFloat(segment?.minorLoss) || 0) > 0;
         const syncSegmentFittingKForAdditionalK = (segment, row = null) => {
             if (!segment) return;
@@ -2262,10 +2284,14 @@ function renderSidebar(nodeId) {
         };
 
         node.props.segments.forEach((seg, i) => {
+            syncSegmentDiameterInputForPipeSize(seg);
             syncSegmentFittingKForAdditionalK(seg);
             const result = segmentResultByIndex.get(i) || {};
             const profile = segmentProfileByIndex.get(i) || {};
-            const diameterReadonly = seg.pipeSize !== 'Custom diameter' ? 'readonly' : '';
+            const diameterReadonly = isCustomPipeDiameterSize(seg.pipeSize) ? '' : 'readonly';
+            const diameterTitle = isCustomPipeDiameterSize(seg.pipeSize)
+                ? 'User-entered internal diameter.'
+                : 'Internal diameter follows the selected NPS / Schedule.';
             const addKActive = segmentHasAdditionalK(seg);
             const fittingKReadonly = addKActive || seg.fittingType !== PIPE_FITTING_CUSTOM ? 'readonly' : '';
             const fittingKTitle = addKActive ? 'K each is zero because Add K is active for this segment.' : '';
@@ -2291,7 +2317,7 @@ function renderSidebar(nodeId) {
                 <tr>
                     <td><input type="text" class="segment-input" data-idx="${i}" data-field="name" value="${escapeHtml(seg.name)}"></td>
                     <td><select class="segment-input" data-idx="${i}" data-field="pipeSize" data-value="${escapeHtml(seg.pipeSize)}">${pipeSizeOptionsHtml}</select></td>
-                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="diameter" value="${displayPipeValue(seg.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3)}" step="0.001" ${diameterReadonly}></td>
+                    <td><input type="number" class="segment-input" data-idx="${i}" data-field="diameter" value="${displayPipeValue(seg.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3)}" step="0.001" title="${escapeHtml(diameterTitle)}" ${diameterReadonly}></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="length" value="${displayPipeValue(seg.length, 'length', 2)}" step="0.1"></td>
                     <td><select class="segment-input" data-idx="${i}" data-field="material" data-value="${escapeHtml(seg.material)}">${materialOptionsHtml}</select></td>
                     <td><input type="number" class="segment-input" data-idx="${i}" data-field="roughnessMm" value="${displayPipeValue(seg.roughness || 0, 'roughness', 4)}" step="0.001"></td>
@@ -2446,12 +2472,7 @@ function renderSidebar(nodeId) {
 
                 if (field === 'pipeSize') {
                     segment.pipeSize = e.target.value;
-                    const sizeOption = getPipeSizeOption(segment.pipeSize);
-                    if (sizeOption && sizeOption.diameter) {
-                        segment.diameter = sizeOption.diameter;
-                        const diameterInput = e.target.closest('tr')?.querySelector('[data-field="diameter"]');
-                        if (diameterInput) diameterInput.value = displayPipeValue(segment.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3);
-                    }
+                    syncSegmentDiameterInputForPipeSize(segment, e.target.closest('tr'));
                     refreshPipeSegmentReadouts();
                     return;
                 }
@@ -2532,12 +2553,7 @@ function renderSidebar(nodeId) {
                 }
                 if (segment && field === 'pipeSize') {
                     segment.pipeSize = e.target.value;
-                    const sizeOption = getPipeSizeOption(segment.pipeSize);
-                    if (sizeOption && sizeOption.diameter) {
-                        segment.diameter = sizeOption.diameter;
-                        const diameterInput = e.target.closest('tr')?.querySelector('[data-field="diameter"]');
-                        if (diameterInput) diameterInput.value = displayPipeValue(segment.diameter, 'diameter', pipeDiameterUnit === 'm' ? 5 : 3);
-                    }
+                    syncSegmentDiameterInputForPipeSize(segment, e.target.closest('tr'));
                 }
                 if (segment && field === 'material') {
                     segment.material = e.target.value;
