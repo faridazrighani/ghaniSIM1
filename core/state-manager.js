@@ -423,6 +423,7 @@ function convertSemanticAttachmentToDirectSourcePipe(sourceId) {
         const pipeId = getNextGeneratedPipeId();
         const pipeProps = getDefaultHydraulicPipePropsForConversion();
         pipeProps.routeStyle = pipeProps.routeStyle || 'Straight';
+        if (typeof normalizePipeProps === 'function') normalizePipeProps(pipeProps, pipeId);
 
         globalModel[pipeId] = { type: 'pipe', name: pipeId, desc: 'Pipe Line', props: pipeProps };
 

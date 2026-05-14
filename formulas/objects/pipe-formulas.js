@@ -55,8 +55,8 @@ function getPipeHeadLossAllowanceFraction(pipeProps) {
     return Math.max(0, toPipeCalcNumber(pipeProps?.headLossAllowancePercent, 0)) / 100;
 }
 
-function calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverride = null) {
-    normalizePipeProps(pipeProps);
+function calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverride = null, pipeId = '') {
+    normalizePipeProps(pipeProps, pipeId);
     const details = [];
     if (flowRateM3H <= 0 || !pipeProps.segments || pipeProps.segments.length === 0) return details;
 
@@ -200,8 +200,8 @@ function buildPipeMoodyChartData(segmentDetails = []) {
     };
 }
 
-function calculatePipeHeadLoss(flowRateM3H, pipeProps, fluidPropsOverride = null) {
-    return calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverride)
+function calculatePipeHeadLoss(flowRateM3H, pipeProps, fluidPropsOverride = null, pipeId = '') {
+    return calculatePipeHydraulicSegments(flowRateM3H, pipeProps, fluidPropsOverride, pipeId)
         .reduce((sum, segment) => sum + segment.totalLoss, 0);
 }
 
@@ -240,8 +240,8 @@ function getPipeTraceFluidProps(fluidPropsOverride = null) {
     };
 }
 
-function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, fluidPropsOverride = null) {
-    normalizePipeProps(pipeProps);
+function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, fluidPropsOverride = null, pipeId = '') {
+    normalizePipeProps(pipeProps, pipeId);
     const flow = Math.max(0, toPipeCalcNumber(flowRateM3H, 0));
     const qM3S = flow / 3600;
     const fluid = getPipeTraceFluidProps(fluidPropsOverride);
@@ -249,7 +249,7 @@ function buildPipeCalculationTrace(flowRateM3H, pipeProps, pipeResults = {}, flu
     const roughnessAgingFactor = getPipeRoughnessAgingFactor(pipeProps);
     const allowancePercent = Math.max(0, toPipeCalcNumber(pipeProps.headLossAllowancePercent, 0));
     const allowanceFraction = allowancePercent / 100;
-    const segmentDetails = calculatePipeHydraulicSegments(flow, pipeProps, fluidPropsOverride);
+    const segmentDetails = calculatePipeHydraulicSegments(flow, pipeProps, fluidPropsOverride, pipeId);
     const segmentProfiles = new Map((pipeResults?.segmentProfiles || []).map(profile => [profile.index, profile]));
 
     const totals = segmentDetails.reduce((sum, detail) => {

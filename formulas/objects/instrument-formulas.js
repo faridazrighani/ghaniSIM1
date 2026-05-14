@@ -132,7 +132,7 @@ function calculatePipePressureBar(pipeId, connections, model, location = 0.5) {
     const gravity = typeof GRAVITY === 'number' ? GRAVITY : 9.81;
     const flow = getPipeFlowRate(pipeId, connections, model);
     const lossHead = (pipe && pipe.props && typeof calculatePipeHeadLoss === 'function')
-        ? calculatePipeHeadLoss(flow, pipe.props)
+        ? calculatePipeHeadLoss(flow, pipe.props, null, pipeId)
         : 0;
     const halfLossBar = (lossHead * density * gravity / 100000) / 2;
 

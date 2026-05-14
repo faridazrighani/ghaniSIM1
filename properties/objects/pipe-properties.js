@@ -39,35 +39,75 @@ const PIPE_SCHEMA = {
     minorLoss: { label: 'Fittings (K)', unit: '', type: 'number', default: 0 }
 };
 
+const PIPE_ASME_SCHEDULE_ORDER = ['5S', '10S', '10', '20', '30', '40S', 'STD', '40', '60', '80S', 'XS', '80', '100', '120', '140', '160', 'XXS'];
+const PIPE_DECIMAL_NPS_ALIASES = {
+    '1.25': '1 1/4',
+    '1.5': '1 1/2',
+    '2.5': '2 1/2',
+    '3.5': '3 1/2'
+};
+
+const PIPE_ASME_DIMENSION_ROWS = [
+    { nps: '1/8', dn: 6, odMm: 10.3, walls: { '10S': 1.24, '10': 1.24, '30': 1.45, '40S': 1.73, STD: 1.73, '40': 1.73, '80S': 2.41, XS: 2.41, '80': 2.41 } },
+    { nps: '1/4', dn: 8, odMm: 13.7, walls: { '10S': 1.65, '10': 1.65, '30': 1.85, '40S': 2.24, STD: 2.24, '40': 2.24, '80S': 3.02, XS: 3.02, '80': 3.02 } },
+    { nps: '3/8', dn: 10, odMm: 17.1, walls: { '10S': 1.65, '10': 1.65, '30': 1.85, '40S': 2.31, STD: 2.31, '40': 2.31, '80S': 3.20, XS: 3.20, '80': 3.20 } },
+    { nps: '1/2', dn: 15, odMm: 21.3, walls: { '5S': 1.65, '10S': 2.11, '10': 2.11, '40S': 2.77, STD: 2.77, '40': 2.77, '80S': 3.73, XS: 3.73, '80': 3.73, '160': 4.78, XXS: 7.47 } },
+    { nps: '3/4', dn: 20, odMm: 26.7, walls: { '5S': 1.65, '10S': 2.11, '10': 2.11, '40S': 2.87, STD: 2.87, '40': 2.87, '80S': 3.91, XS: 3.91, '80': 3.91, '160': 5.56, XXS: 7.82 } },
+    { nps: '1', dn: 25, odMm: 33.4, walls: { '5S': 1.65, '10S': 2.77, '10': 2.77, '40S': 3.38, STD: 3.38, '40': 3.38, '80S': 4.55, XS: 4.55, '80': 4.55, '160': 6.35, XXS: 9.09 } },
+    { nps: '1 1/4', dn: 32, odMm: 42.2, walls: { '5S': 1.65, '10S': 2.77, '10': 2.77, '40S': 3.56, STD: 3.56, '40': 3.56, '80S': 4.85, XS: 4.85, '80': 4.85, '160': 6.35, XXS: 9.70 } },
+    { nps: '1 1/2', dn: 40, odMm: 48.3, walls: { '5S': 1.65, '10S': 2.77, '10': 2.77, '40S': 3.68, STD: 3.68, '40': 3.68, '80S': 5.08, XS: 5.08, '80': 5.08, '160': 7.14, XXS: 10.15 } },
+    { nps: '2', dn: 50, odMm: 60.3, walls: { '5S': 1.65, '10S': 2.77, '10': 2.77, '40S': 3.91, STD: 3.91, '40': 3.91, '80S': 5.54, XS: 5.54, '80': 5.54, '160': 8.74, XXS: 11.07 } },
+    { nps: '2 1/2', dn: 65, odMm: 73.0, walls: { '5S': 2.11, '10S': 3.05, '10': 3.05, '40S': 5.16, STD: 5.16, '40': 5.16, '80S': 7.01, XS: 7.01, '80': 7.01, '160': 9.53, XXS: 14.02 } },
+    { nps: '3', dn: 80, odMm: 88.9, walls: { '5S': 2.11, '10S': 3.05, '10': 3.05, '40S': 5.49, STD: 5.49, '40': 5.49, '80S': 7.62, XS: 7.62, '80': 7.62, '160': 11.13, XXS: 15.24 } },
+    { nps: '3 1/2', dn: 90, odMm: 101.6, walls: { '5S': 2.11, '10S': 3.05, '10': 3.05, '40S': 5.74, STD: 5.74, '40': 5.74, '80S': 8.08, XS: 8.08, '80': 8.08 } },
+    { nps: '4', dn: 100, odMm: 114.3, walls: { '5S': 2.11, '10S': 3.05, '10': 3.05, '40S': 6.02, STD: 6.02, '40': 6.02, '80S': 8.56, XS: 8.56, '80': 8.56, '120': 11.13, '160': 13.49, XXS: 17.12 } },
+    { nps: '5', dn: 125, odMm: 141.3, walls: { '5S': 2.77, '10S': 3.40, '10': 3.40, '40S': 6.55, STD: 6.55, '40': 6.55, '80S': 9.53, XS: 9.53, '80': 9.53, '120': 12.70, '160': 15.88, XXS: 19.05 } },
+    { nps: '6', dn: 150, odMm: 168.3, walls: { '5S': 2.77, '10S': 3.40, '10': 3.40, '40S': 7.11, STD: 7.11, '40': 7.11, '80S': 10.97, XS: 10.97, '80': 10.97, '120': 14.27, '160': 18.26, XXS: 21.95 } },
+    { nps: '8', dn: 200, odMm: 219.1, walls: { '5S': 2.77, '10S': 3.76, '10': 3.76, '20': 6.35, '30': 7.04, '40S': 8.18, STD: 8.18, '40': 8.18, '60': 10.31, '80S': 12.70, XS: 12.70, '80': 12.70, '100': 15.09, '120': 18.26, '140': 20.62, '160': 23.01, XXS: 22.23 } },
+    { nps: '10', dn: 250, odMm: 273.1, walls: { '5S': 3.40, '10S': 4.19, '10': 4.19, '20': 6.35, '30': 7.80, '40S': 9.27, STD: 9.27, '40': 9.27, '60': 12.70, '80S': 12.70, XS: 12.70, '80': 15.09, '100': 18.26, '120': 21.44, '140': 25.40, '160': 28.58, XXS: 25.40 } },
+    { nps: '12', dn: 300, odMm: 323.9, walls: { '5S': 3.96, '10S': 4.57, '10': 4.57, '20': 6.35, '30': 8.38, '40S': 9.53, STD: 9.53, '40': 10.31, '60': 14.27, '80S': 12.70, XS: 12.70, '80': 17.48, '100': 21.44, '120': 25.40, '140': 28.58, '160': 33.32, XXS: 25.40 } },
+    { nps: '14', dn: 350, odMm: 355.6, walls: { '5S': 3.96, '10S': 4.78, '10': 6.35, '20': 7.92, '30': 9.53, '40S': 9.53, STD: 9.53, '40': 11.13, '60': 15.09, '80S': 12.70, XS: 12.70, '80': 19.05, '100': 23.83, '120': 27.79, '140': 31.75, '160': 35.71 } },
+    { nps: '16', dn: 400, odMm: 406.4, walls: { '5S': 4.19, '10S': 4.78, '10': 6.35, '20': 7.92, '30': 9.53, '40S': 9.53, STD: 9.53, '40': 12.70, '60': 16.66, '80S': 12.70, XS: 12.70, '80': 21.44, '100': 26.19, '120': 30.96, '140': 36.53, '160': 40.49 } },
+    { nps: '18', dn: 450, odMm: 457.2, walls: { '5S': 4.19, '10S': 4.78, '10': 6.35, '20': 7.92, '30': 11.13, '40S': 9.53, STD: 9.53, '40': 14.27, '60': 19.05, '80S': 12.70, XS: 12.70, '80': 23.83, '100': 29.36, '120': 34.93, '140': 39.67, '160': 45.24 } },
+    { nps: '20', dn: 500, odMm: 508.0, walls: { '5S': 4.78, '10S': 5.54, '10': 6.35, '20': 9.53, '30': 12.70, '40S': 9.53, STD: 9.53, '40': 15.09, '60': 20.62, '80S': 12.70, XS: 12.70, '80': 26.19, '100': 32.54, '120': 38.10, '140': 44.45, '160': 50.01 } },
+    { nps: '22', dn: 550, odMm: 559.0, walls: { '5S': 4.78, '10S': 5.54, '10': 6.35, '20': 9.53, '30': 12.70, '40S': 9.53, STD: 9.53, '60': 22.23, '80S': 12.70, XS: 12.70, '80': 28.58, '100': 34.93, '120': 41.28, '140': 47.63, '160': 53.98 } },
+    { nps: '24', dn: 600, odMm: 610.0, walls: { '5S': 5.54, '10S': 6.35, '10': 6.35, '20': 9.53, '30': 14.27, '40S': 9.53, STD: 9.53, '40': 17.48, '60': 24.61, '80S': 12.70, XS: 12.70, '80': 30.96, '100': 38.89, '120': 46.02, '140': 52.37, '160': 59.54 } }
+];
+
+function pipeMmToM(value) {
+    return Number((value / 1000).toFixed(6));
+}
+
+function getPipeScheduleStandard(schedule) {
+    return String(schedule || '').endsWith('S') ? 'ASME B36.19M' : 'ASME B36.10M';
+}
+
+function createPipeSizeOption(row, schedule) {
+    const wallMm = row.walls[schedule];
+    const insideDiameterMm = Math.max(0, row.odMm - (2 * wallMm));
+    const standard = getPipeScheduleStandard(schedule);
+    return {
+        label: `NPS ${row.nps} - Sch ${schedule}`,
+        nps: row.nps,
+        dn: row.dn,
+        schedule,
+        standard,
+        outsideDiameter: pipeMmToM(row.odMm),
+        outsideDiameterMm: row.odMm,
+        wallThickness: pipeMmToM(wallMm),
+        wallThicknessMm: wallMm,
+        diameter: pipeMmToM(insideDiameterMm),
+        insideDiameterMm: Number(insideDiameterMm.toFixed(3)),
+        source: `${standard} schedule dimension preset; ID = OD - 2 x wall thickness; verify project piping class and material specification.`,
+        status: 'Standard'
+    };
+}
+
 const PIPE_SIZE_OPTIONS = [
     { label: 'Custom diameter', diameter: null, source: 'User-entered internal diameter', status: 'User' },
-    { label: 'DN 25 / NPS 1 - Sch 40', diameter: 0.02664, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 40 / NPS 1.5 - Sch 40', diameter: 0.04089, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 50 / NPS 2 - Sch 40', diameter: 0.05250, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 80 / NPS 3 - Sch 40', diameter: 0.07793, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 100 / NPS 4 - Sch 40', diameter: 0.10226, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 150 / NPS 6 - Sch 40', diameter: 0.15405, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 200 / NPS 8 - Sch 40', diameter: 0.20272, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 250 / NPS 10 - Sch 40', diameter: 0.25451, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'DN 300 / NPS 12 - Sch 40', diameter: 0.30323, source: 'DN/NPS schedule ID preset based on ASME B36.10M; verify project piping class', status: 'Standard' },
-    { label: 'NPS 1 - Sch 40', diameter: 0.02664, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 1 - Sch 80', diameter: 0.02431, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 1.5 - Sch 40', diameter: 0.04089, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 1.5 - Sch 80', diameter: 0.03810, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 2 - Sch 40', diameter: 0.05250, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 2 - Sch 80', diameter: 0.04925, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 3 - Sch 40', diameter: 0.07793, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 3 - Sch 80', diameter: 0.07366, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 4 - Sch 40', diameter: 0.10226, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 4 - Sch 80', diameter: 0.09718, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 6 - Sch 40', diameter: 0.15405, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 6 - Sch 80', diameter: 0.14633, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 8 - Sch 40', diameter: 0.20272, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 8 - Sch 80', diameter: 0.19368, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 10 - Sch 40', diameter: 0.25451, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 10 - Sch 80', diameter: 0.24765, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 12 - Sch 40', diameter: 0.30323, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' },
-    { label: 'NPS 12 - Sch 80', diameter: 0.28885, source: 'ASME B36.10M schedule ID preset; verify project piping class', status: 'Standard' }
+    ...PIPE_ASME_DIMENSION_ROWS.flatMap(row => PIPE_ASME_SCHEDULE_ORDER
+        .filter(schedule => row.walls[schedule] !== undefined)
+        .map(schedule => createPipeSizeOption(row, schedule)))
 ];
 
 const PIPE_MATERIAL_OPTIONS = [
@@ -137,8 +177,73 @@ const PIPE_DEFAULT_SEGMENTS = [
     }
 ];
 
+const PIPE_SEGMENT_AUTO_NAME_PATTERN = /^PIPE-\d+-Seg-\d+$/i;
+const PIPE_SEGMENT_LEGACY_NAME_PATTERN = /^Segment\s+\d+$/i;
+
+function getPipeSegmentAutoName(pipeId, index) {
+    const normalizedPipeId = String(pipeId || '').trim();
+    const segmentNumber = Math.max(1, index + 1);
+    return /^PIPE-\d+$/i.test(normalizedPipeId)
+        ? `${normalizedPipeId}-Seg-${segmentNumber}`
+        : `Segment ${segmentNumber}`;
+}
+
+function isPipeAutoManagedSegmentName(value) {
+    const name = String(value || '').trim();
+    return !name
+        || name.toLowerCase() === 'new seg'
+        || PIPE_SEGMENT_LEGACY_NAME_PATTERN.test(name)
+        || PIPE_SEGMENT_AUTO_NAME_PATTERN.test(name);
+}
+
+function normalizePipeSegmentName(segment, index, pipeId = '') {
+    if (!segment) return;
+    const existingName = String(segment.name || '').trim();
+    if (segment.nameUserEdited === true && existingName) return;
+
+    if (!existingName || (pipeId && isPipeAutoManagedSegmentName(existingName))) {
+        segment.name = getPipeSegmentAutoName(pipeId, index);
+        segment.nameUserEdited = false;
+    }
+}
+
+function normalizePipeSegmentNames(pipeProps, pipeId = '') {
+    if (!pipeProps || !Array.isArray(pipeProps.segments)) return pipeProps;
+    pipeProps.segments.forEach((segment, index) => normalizePipeSegmentName(segment, index, pipeId));
+    return pipeProps;
+}
+
+function normalizePipeNpsToken(value) {
+    const token = String(value || '').trim().replace(/\s+/g, ' ');
+    return PIPE_DECIMAL_NPS_ALIASES[token] || token;
+}
+
+function normalizePipeScheduleToken(value) {
+    return String(value || '').trim().replace(/^Sch\s+/i, '').toUpperCase();
+}
+
+function normalizePipeSizeLabel(label) {
+    const text = String(label || '').trim();
+    if (!text || text === 'Custom diameter') return text || 'Custom diameter';
+
+    const dnNpsMatch = text.match(/^DN\s+\d+\s*\/\s*NPS\s+(.+?)\s*-\s*Sch\s+(.+)$/i);
+    if (dnNpsMatch) {
+        return `NPS ${normalizePipeNpsToken(dnNpsMatch[1])} - Sch ${normalizePipeScheduleToken(dnNpsMatch[2])}`;
+    }
+
+    const npsMatch = text.match(/^NPS\s+(.+?)\s*-\s*Sch\s+(.+)$/i);
+    if (npsMatch) {
+        return `NPS ${normalizePipeNpsToken(npsMatch[1])} - Sch ${normalizePipeScheduleToken(npsMatch[2])}`;
+    }
+
+    return text;
+}
+
 function getPipeSizeOption(label) {
-    return PIPE_SIZE_OPTIONS.find(item => item.label === label) || PIPE_SIZE_OPTIONS[0];
+    const normalizedLabel = normalizePipeSizeLabel(label);
+    return PIPE_SIZE_OPTIONS.find(item => item.label === normalizedLabel)
+        || PIPE_SIZE_OPTIONS.find(item => item.label === label)
+        || PIPE_SIZE_OPTIONS[0];
 }
 
 function getPipeMaterialOption(label) {
@@ -237,7 +342,7 @@ function isPipeValveLikeFitting(fittingType) {
 
 function getPipeRepresentativeDiameter(pipe) {
     if (!pipe || pipe.type !== 'pipe' || !pipe.props) return null;
-    normalizePipeProps(pipe.props);
+    normalizePipeProps(pipe.props, pipe.name || '');
     const segment = (pipe.props.segments || []).find(item => parseFloat(item.diameter) > 0);
     const diameter = parseFloat(segment?.diameter);
     return Number.isFinite(diameter) && diameter > 0 ? diameter : null;
@@ -245,7 +350,7 @@ function getPipeRepresentativeDiameter(pipe) {
 
 function getPipeRepresentativeSizeLabel(pipe) {
     if (!pipe || pipe.type !== 'pipe' || !pipe.props) return '-';
-    normalizePipeProps(pipe.props);
+    normalizePipeProps(pipe.props, pipe.name || '');
     const segment = (pipe.props.segments || []).find(item => parseFloat(item.diameter) > 0);
     return segment?.pipeSize || 'Custom diameter';
 }
@@ -263,7 +368,7 @@ function getPipeValveCompatibilityWarnings(pipeId, model = globalModel, connecti
     const pipe = model?.[pipeId];
     if (!pipe || pipe.type !== 'pipe' || !pipe.props) return [];
 
-    normalizePipeProps(pipe.props);
+    normalizePipeProps(pipe.props, pipeId);
     const warnings = [];
     const connectedValves = getPipeConnectedValveReferences(pipeId, model, connectionList);
     const hasPhysicalValveObject = connectedValves.length > 0;
@@ -304,7 +409,7 @@ function normalizeOptionalPipeNumber(value) {
     return Number.isFinite(parsed) ? parsed : '';
 }
 
-function normalizePipeProps(pipeProps) {
+function normalizePipeProps(pipeProps, pipeId = '') {
     if (!pipeProps) return { segments: [] };
     pipeProps.routeStyle = pipeProps.routeStyle || 'Straight';
     pipeProps.pressureClass = normalizePipePressureClass(pipeProps.pressureClass);
@@ -316,12 +421,13 @@ function normalizePipeProps(pipeProps) {
     if (!Array.isArray(pipeProps.segments) || pipeProps.segments.length === 0) {
         pipeProps.segments = PIPE_DEFAULT_SEGMENTS.map(segment => ({ ...segment }));
     }
+    normalizePipeSegmentNames(pipeProps, pipeId);
 
     const hasSegmentMinorLoss = pipeProps.segments.some(segment => segment.minorLoss !== undefined);
     const legacyMinorLoss = !hasSegmentMinorLoss ? (parseFloat(pipeProps.minorLoss) || 0) : 0;
 
     pipeProps.segments.forEach((segment, index) => {
-        segment.name = segment.name || `Segment ${index + 1}`;
+        normalizePipeSegmentName(segment, index, pipeId);
         segment.pipeSize = segment.pipeSize || 'Custom diameter';
         segment.material = segment.material || 'Commercial steel';
         segment.length = Math.max(0, parseFloat(segment.length) || 0);

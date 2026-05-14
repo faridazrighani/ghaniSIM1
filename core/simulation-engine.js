@@ -67,6 +67,50 @@ function updatePumpResultReadouts(pump) {
     });
 }
 
+function buildPumpChartSeries(curve = [], xConverter = value => value, yConverter = value => value) {
+    if (!Array.isArray(curve)) return [];
+    return curve
+        .map(point => {
+            const rawX = Array.isArray(point) ? point[0] : point?.x;
+            const rawY = Array.isArray(point) ? point[1] : point?.y;
+            const x = parseFloat(xConverter(rawX));
+            const y = rawY === null || rawY === undefined ? null : parseFloat(yConverter(rawY));
+            return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+        })
+        .filter(Boolean);
+}
+
+function calculatePumpChartAxisBounds(seriesList = []) {
+    const points = seriesList.flatMap(series => Array.isArray(series) ? series : []);
+    const xValues = points.map(point => point.x).filter(Number.isFinite);
+    const yValues = points.map(point => point.y).filter(Number.isFinite);
+    if (!xValues.length || !yValues.length) {
+        return {
+            x: { min: 0, max: 10 },
+            y: { min: 0, max: 10 }
+        };
+    }
+
+    const maxX = Math.max(...xValues);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const xSpan = Math.max(maxX, 1);
+    const ySpan = Math.max(maxY - Math.min(0, minY), Math.abs(maxY), 1);
+    const xPadding = xSpan * 0.06;
+    const yPadding = ySpan * 0.08;
+
+    return {
+        x: {
+            min: 0,
+            max: maxX + xPadding
+        },
+        y: {
+            min: minY >= 0 ? 0 : minY - yPadding,
+            max: maxY + yPadding
+        }
+    };
+}
+
 function updatePumpChart(pumpId) {
     const pump = globalModel[pumpId];
     if (!pumpChartInstance || !pump || pump.type !== 'pump' || !pump.results) return;
@@ -78,14 +122,27 @@ function updatePumpChart(pumpId) {
         ? value
         : (typeof convertToDisplay === 'function' ? convertToDisplay(value, 'head') : value);
 
-    pumpChartInstance.data.labels = pump.results.sysCurve.map(d => toFlow(d[0]));
-    pumpChartInstance.data.datasets[0].data = pump.results.pumpCurve.map(d => toHead(d[1]));
-    pumpChartInstance.data.datasets[1].data = pump.results.sysCurve.map(d => toHead(d[1]));
+    const pumpHeadSeries = buildPumpChartSeries(pump.results.pumpCurve, toFlow, toHead);
+    const systemCurveSeries = buildPumpChartSeries(pump.results.sysCurve, toFlow, toHead);
+    const axisBounds = calculatePumpChartAxisBounds([pumpHeadSeries, systemCurveSeries]);
+
+    pumpChartInstance.data.labels = [];
+    pumpChartInstance.data.datasets[0].data = pumpHeadSeries;
+    pumpChartInstance.data.datasets[1].data = systemCurveSeries;
     if (pumpChartInstance.options?.scales?.x?.title) {
         pumpChartInstance.options.scales.x.title.text = `Flow Rate (${flowUnit})`;
     }
     if (pumpChartInstance.options?.scales?.y?.title) {
         pumpChartInstance.options.scales.y.title.text = `Head (${headUnit})`;
+    }
+    if (pumpChartInstance.options?.scales?.x) {
+        pumpChartInstance.options.scales.x.type = 'linear';
+        pumpChartInstance.options.scales.x.min = axisBounds.x.min;
+        pumpChartInstance.options.scales.x.max = axisBounds.x.max;
+    }
+    if (pumpChartInstance.options?.scales?.y) {
+        pumpChartInstance.options.scales.y.min = axisBounds.y.min;
+        pumpChartInstance.options.scales.y.max = axisBounds.y.max;
     }
     pumpChartInstance.update('none');
 }

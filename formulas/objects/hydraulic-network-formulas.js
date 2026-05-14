@@ -96,7 +96,7 @@ function getPipeVelocityHead(pipeId, flowRateM3H, model, segmentSelector = 'outl
     const pipe = model[pipeId];
     if (!pipe || pipe.type !== 'pipe' || !pipe.props || typeof calculatePipeHydraulicSegments !== 'function') return 0;
 
-    const segments = calculatePipeHydraulicSegments(flowRateM3H, pipe.props);
+    const segments = calculatePipeHydraulicSegments(flowRateM3H, pipe.props, null, pipeId);
     if (!segments.length) return 0;
 
     let segment = segments[segments.length - 1];
@@ -1421,7 +1421,7 @@ function calculateHydraulicPipeLossHead(pipeId, flowRateM3H, model, fluidProps =
     if (!pipe || pipe.type !== 'pipe' || !pipe.props || typeof calculatePipeHeadLoss !== 'function') {
         return 0;
     }
-    return calculatePipeHeadLoss(flowRateM3H, pipe.props, fluidProps);
+    return calculatePipeHeadLoss(flowRateM3H, pipe.props, fluidProps, pipeId);
 }
 
 function calculateHydraulicPipeLossBreakdown(pipeId, flowRateM3H, model, fluidProps = null) {
@@ -1438,7 +1438,7 @@ function calculateHydraulicPipeLossBreakdown(pipeId, flowRateM3H, model, fluidPr
         };
     }
 
-    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props, fluidProps);
+    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props, fluidProps, pipeId);
     const majorLoss = details.reduce((sum, segment) => sum + segment.majorLoss, 0);
     const minorLoss = details.reduce((sum, segment) => sum + segment.minorLoss, 0);
     return {
@@ -1959,7 +1959,7 @@ function getPipeHighPointCandidateForSegment(pipe, segment, detail, elevationPro
 
 function calculatePipeSegmentPressureProfile(pipe, flowRateM3H, inletHead, density, vaporPressureBar, fromElevation, toElevation) {
     if (typeof calculatePipeHydraulicSegments !== 'function') return [];
-    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props);
+    const details = calculatePipeHydraulicSegments(flowRateM3H, pipe.props, null, pipe?.name || '');
     const elevations = getPipeSegmentElevationProfile(pipe, fromElevation, toElevation, details);
     const segments = Array.isArray(pipe?.props?.segments) ? pipe.props.segments : [];
     const globalCandidate = getPipeGlobalHighPointCandidate(pipe, details);
