@@ -68,6 +68,54 @@ const basePipe = {
     }]
 };
 
+const namingPipe = structuredClone(basePipe);
+namingPipe.segments.push(
+    {
+        ...structuredClone(basePipe.segments[0]),
+        name: 'New Seg'
+    },
+    {
+        ...structuredClone(basePipe.segments[0]),
+        name: 'Custom suction spool'
+    }
+);
+context.namingPipe = namingPipe;
+vm.runInContext('normalizePipeProps(namingPipe, "PIPE-1")', context);
+assert(context.namingPipe.segments[0].name === 'PIPE-1-Seg-1', 'Expected legacy segment name to migrate to PIPE-1-Seg-1');
+assert(context.namingPipe.segments[1].name === 'PIPE-1-Seg-2', 'Expected New Seg to migrate to PIPE-1-Seg-2');
+assert(context.namingPipe.segments[2].name === 'Custom suction spool', 'Expected user-entered segment names to be preserved');
+
+const renumberPipe = structuredClone(basePipe);
+renumberPipe.segments[0].name = 'PIPE-8-Seg-7';
+renumberPipe.segments.push({
+    ...structuredClone(basePipe.segments[0]),
+    name: 'Segment 2'
+});
+context.renumberPipe = renumberPipe;
+vm.runInContext('normalizePipeProps(renumberPipe, "PIPE-2")', context);
+assert(context.renumberPipe.segments[0].name === 'PIPE-2-Seg-1', 'Expected generated segment name to follow the active pipe id');
+assert(context.renumberPipe.segments[1].name === 'PIPE-2-Seg-2', 'Expected generated segment name to follow the active segment order');
+
+const pipeSizeAudit = vm.runInContext(`(() => {
+    const nps4 = getPipeSizeOption('NPS 4 - Sch 40');
+    const legacyNps4 = getPipeSizeOption('DN 100 / NPS 4 - Sch 40');
+    const decimalNps = getPipeSizeOption('NPS 1.5 - Sch 40');
+    const highPressure = getPipeSizeOption('NPS 24 - Sch 160');
+    return {
+        count: PIPE_SIZE_OPTIONS.length,
+        nps4,
+        legacyNps4,
+        decimalNps,
+        highPressure
+    };
+})()`, context);
+assert(pipeSizeAudit.count > 240, 'Expected expanded ASME pipe size database');
+assertClose('NPS 4 Sch 40 ASME ID', pipeSizeAudit.nps4.diameter, 0.10226, 1e-12);
+assertClose('legacy DN/NPS label maps to ASME ID', pipeSizeAudit.legacyNps4.diameter, 0.10226, 1e-12);
+assert(pipeSizeAudit.decimalNps.label === 'NPS 1 1/2 - Sch 40', 'Expected decimal NPS legacy labels to normalize to fractional NPS labels');
+assert(pipeSizeAudit.highPressure.standard === 'ASME B36.10M', 'Expected non-S schedule options to use ASME B36.10M source');
+assert(pipeSizeAudit.highPressure.wallThicknessMm === 59.54, 'Expected NPS 24 Sch 160 wall thickness in ASME database');
+
 const majorOnly = evaluatePipe(structuredClone(basePipe), 10)[0];
 const q = 10 / 3600;
 const area = Math.PI * Math.pow(0.1, 2) / 4;
@@ -403,6 +451,7 @@ const taskProperties = fs.readFileSync(path.join(projectRoot, 'ui/sidebar-proper
 const objectProperties = fs.readFileSync(path.join(projectRoot, 'properties/object-properties.js'), 'utf8');
 const valveProperties = fs.readFileSync(path.join(projectRoot, 'properties/objects/valve-properties.js'), 'utf8');
 const canvasManager = fs.readFileSync(path.join(projectRoot, 'ui/canvas-manager.js'), 'utf8');
+const menuBar = fs.readFileSync(path.join(projectRoot, 'toolbar/menu-bar.js'), 'utf8');
 const taskWindow = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
 const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
@@ -423,6 +472,10 @@ assert(taskProperties.includes('formatEngineeringValue(fittingKDisplayValue, 3)'
 assert(taskProperties.includes('syncSegmentDiameterInputForPipeSize(seg);'), 'Expected pipe segment initial render to sync Custom diameter editability');
 assert(taskProperties.includes('diameterInput.readOnly = !isCustomDiameter'), 'Expected Custom diameter to make ID editable and standard NPS/Schedule to lock ID');
 assert(taskProperties.includes("syncSegmentDiameterInputForPipeSize(segment, e.target.closest('tr'))"), 'Expected pipe size changes to immediately update ID editability');
+assert(taskProperties.includes('getPipeSegmentAutoName(nodeId, nextIndex)'), 'Expected Add Segment to use pipe-id-based segment naming');
+assert(taskProperties.includes('segment.nameUserEdited = !!String'), 'Expected manual segment names to be preserved after user edits');
+assert(canvasManager.includes('normalizePipeProps(pipeProps, pipeId)'), 'Expected newly connected pipes to receive pipe-id-based segment names');
+assert(menuBar.includes('normalizePipeProps(globalModel[nodeId].props, nodeId)'), 'Expected loaded files to migrate legacy pipe segment names');
 assert(objectProperties.includes('Pipe / Valve Compatibility'), 'Expected valve compatibility audit in object properties');
 assert(objectProperties.includes('Calculated Valve Readout'), 'Expected valve calculated readout section');
 assert(objectProperties.includes('renderValveCalculationTraceReport'), 'Expected valve calculation trace renderer');

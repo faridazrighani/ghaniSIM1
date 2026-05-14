@@ -18,9 +18,13 @@ assert(formFieldAccessibility.includes('normalizeFormFieldAccessibility'), 'Norm
 assert(formFieldAccessibility.includes('MutationObserver'), 'Normalizer should handle dynamically rendered form fields');
 assert(formFieldAccessibility.includes('field.name = key'), 'Form fields should receive a name attribute');
 assert(formFieldAccessibility.includes('field.id = candidate'), 'Form fields should receive a generated id when missing');
+assert(formFieldAccessibility.includes("field.setAttribute('autocomplete', 'off')"), 'Form fields should receive an explicit autocomplete attribute');
 assert(formFieldAccessibility.includes('aria-labelledby'), 'Unlabelled form fields should receive an accessible label reference');
 assert(formFieldAccessibility.includes('aria-label'), 'Native-labelled form fields should receive an explicit accessible name');
 assert(formFieldAccessibility.includes('.fluid-field-label, .prop-label, th, [data-label]'), 'Normalizer should infer labels from local UI row labels');
+assert(formFieldAccessibility.includes('function repairLabelFor(label)'), 'Invalid label for attributes should be repaired');
+assert(formFieldAccessibility.includes("label.removeAttribute('for')"), 'Detached labels should not retain invalid for attributes');
+assert(formFieldAccessibility.includes('normalizeFormFieldAccessibility(node)'), 'Newly rendered dynamic fields should be normalized immediately');
 assert(taskWindowSource.includes("document.createElement(editable ? 'label' : 'div')"), 'Read-only Fluid Basis rows should not be rendered as unassociated labels');
 assert(styles.includes('.form-field-a11y-label'), 'Styles should hide generated accessibility labels visually');
 assert(styles.includes('clip: rect(0, 0, 0, 0)'), 'Generated labels should be visually hidden without affecting layout');

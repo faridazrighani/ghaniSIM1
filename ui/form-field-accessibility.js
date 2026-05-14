@@ -4,6 +4,7 @@
         'select',
         'textarea'
     ].join(',');
+    const LABEL_SELECTOR = 'label[for]';
     let generatedFieldId = 0;
     let pendingNormalizeFrame = null;
 
@@ -96,6 +97,11 @@
         field.id = candidate;
     }
 
+    function ensureFieldAutocomplete(field) {
+        if (field.hasAttribute('autocomplete')) return;
+        field.setAttribute('autocomplete', 'off');
+    }
+
     function hasNativeLabel(field) {
         return !!(field.labels && field.labels.length > 0);
     }
@@ -125,13 +131,43 @@
     function normalizeFormField(field) {
         if (!field || !field.matches?.(FORM_FIELD_SELECTOR)) return;
         ensureFieldIdentity(field);
+        ensureFieldAutocomplete(field);
         ensureFieldLabel(field);
+    }
+
+    function findLabelFieldCandidate(label) {
+        return label.querySelector?.(FORM_FIELD_SELECTOR)
+            || label.nextElementSibling?.matches?.(FORM_FIELD_SELECTOR) && label.nextElementSibling
+            || label.parentElement?.querySelector?.(FORM_FIELD_SELECTOR)
+            || null;
+    }
+
+    function repairLabelFor(label) {
+        if (!label || !label.matches?.(LABEL_SELECTOR)) return;
+        const targetId = label.getAttribute('for');
+        if (targetId && document.getElementById(targetId)) return;
+
+        const field = findLabelFieldCandidate(label);
+        if (field) {
+            normalizeFormField(field);
+            label.htmlFor = field.id;
+            return;
+        }
+
+        label.removeAttribute('for');
+    }
+
+    function normalizeLabelTargets(root = document) {
+        if (!root) return;
+        if (root.matches?.(LABEL_SELECTOR)) repairLabelFor(root);
+        root.querySelectorAll?.(LABEL_SELECTOR).forEach(repairLabelFor);
     }
 
     function normalizeFormFieldAccessibility(root = document) {
         if (!root) return;
         if (root.matches?.(FORM_FIELD_SELECTOR)) normalizeFormField(root);
         root.querySelectorAll?.(FORM_FIELD_SELECTOR).forEach(normalizeFormField);
+        normalizeLabelTargets(root);
     }
 
     function scheduleNormalize() {
@@ -149,11 +185,11 @@
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        scheduleNormalize();
-                        return;
+                        normalizeFormFieldAccessibility(node);
                     }
                 }
             }
+            scheduleNormalize();
         });
         observer.observe(document.body, { childList: true, subtree: true });
         document.addEventListener('focusin', event => normalizeFormField(event.target), true);

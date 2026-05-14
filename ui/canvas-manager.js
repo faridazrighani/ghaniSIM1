@@ -1767,6 +1767,7 @@ function makeDraggable(obj) {
                         if (((fromType === 'valve' && toType === 'pump') || (fromType === 'pump' && toType === 'valve')) && pipeProps.routeStyle === 'Straight') {
                             pipeProps.routeStyle = 'Elbow';
                         }
+                        if (typeof normalizePipeProps === 'function') normalizePipeProps(pipeProps, pipeId);
                         
                         captureState();
                         globalModel[pipeId] = { type: "pipe", name: pipeId, desc: "Pipe Line", props: pipeProps };

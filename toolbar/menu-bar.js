@@ -165,6 +165,14 @@ function applySimulationState(jsonString) {
         }
     }
     if (globalModel.FLUID) globalModel.FLUID.name = 'Fluid Basis';
+    if (typeof normalizePipeProps === 'function') {
+        Object.keys(globalModel).forEach(nodeId => {
+            if (globalModel[nodeId]?.type === 'pipe') {
+                normalizePipeProps(globalModel[nodeId].props, nodeId);
+                globalModel[nodeId].name = globalModel[nodeId].name || nodeId;
+            }
+        });
+    }
     connections.splice(0, connections.length, ...data.connections);
     instrumentLinks.splice(0, instrumentLinks.length, ...(data.instrumentLinks || []));
     sourceLinks.splice(0, sourceLinks.length, ...(data.sourceLinks || []));

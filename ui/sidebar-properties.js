@@ -462,11 +462,11 @@ function renderPipeCalculationTraceReport(trace) {
 function refreshVisiblePipeCalculationTrace(nodeId) {
     const node = globalModel?.[nodeId];
     if (!node || node.type !== 'pipe') return;
-    if (typeof normalizePipeProps === 'function') normalizePipeProps(node.props);
+    if (typeof normalizePipeProps === 'function') normalizePipeProps(node.props, nodeId);
 
     const updatedFlow = node.results && node.results.pressureCalculated ? parseFloat(node.results.flow) || 0 : 0;
     const updatedDetails = typeof calculatePipeHydraulicSegments === 'function'
-        ? new Map(calculatePipeHydraulicSegments(updatedFlow, node.props).map(result => [result.index, result]))
+        ? new Map(calculatePipeHydraulicSegments(updatedFlow, node.props, null, nodeId).map(result => [result.index, result]))
         : new Map();
     const updatedProfiles = new Map((node.results?.segmentProfiles || []).map(profile => [profile.index, profile]));
     const updatedHeadLoss = [...updatedDetails.values()].reduce((sum, result) => sum + result.totalLoss, 0);
@@ -505,7 +505,7 @@ function refreshVisiblePipeCalculationTrace(nodeId) {
     document.querySelectorAll('[data-key="pipe-calculation-trace-body"]').forEach(traceBody => {
         if (typeof buildPipeCalculationTrace === 'function') {
             traceBody.innerHTML = renderPipeCalculationTraceReport(
-                buildPipeCalculationTrace(updatedFlow, node.props, node.results)
+                buildPipeCalculationTrace(updatedFlow, node.props, node.results, null, nodeId)
             );
         }
     });
@@ -1538,7 +1538,7 @@ function renderSidebar(nodeId) {
                 }
 
                 if (globalModel[n].type === 'pipe' && (k === 'routeStyle' || k === 'elevationProfileMode')) {
-                    if (typeof normalizePipeProps === 'function') normalizePipeProps(globalModel[n].props);
+                    if (typeof normalizePipeProps === 'function') normalizePipeProps(globalModel[n].props, n);
                     drawConnections();
                     updateSimulation({ renderSidebarAfter: false });
                     renderSidebar(n);
@@ -1553,7 +1553,7 @@ function renderSidebar(nodeId) {
                     'roughnessAgingFactor',
                     'headLossAllowancePercent'
                 ].includes(k)) {
-                    if (typeof normalizePipeProps === 'function') normalizePipeProps(globalModel[n].props);
+                    if (typeof normalizePipeProps === 'function') normalizePipeProps(globalModel[n].props, n);
                     updateSimulation({ renderSidebarAfter: false });
                     refreshVisiblePipeCalculationTrace(n);
                     return;
@@ -2052,7 +2052,7 @@ function renderSidebar(nodeId) {
         addRow('Min NPSH Margin', node.props.minNpshMargin, 'minNpshMargin', false, 'm', 'number');
     } else if (node.type === 'pipe') {
         if (node.props.routeStyle === undefined) node.props.routeStyle = 'Straight';
-        normalizePipeProps(node.props);
+        normalizePipeProps(node.props, nodeId);
         addRow('Pipe Routing', node.props.routeStyle, 'routeStyle', false, '', 'select', ['Straight', 'Elbow']);
         addRow('Pipe Rating/Class', node.props.pressureClass || 'ASME Class 150', 'pressureClass', false, '', 'select', typeof PIPE_PRESSURE_CLASS_OPTIONS !== 'undefined' ? PIPE_PRESSURE_CLASS_OPTIONS : ['ASME Class 150', 'ASME Class 300', 'ASME Class 600', 'PN16', 'User-defined']);
         addRow('End Connection Basis', node.props.endConnection || 'By piping class / compatible', 'endConnection', false, '', 'select', typeof PIPE_END_CONNECTION_OPTIONS !== 'undefined' ? PIPE_END_CONNECTION_OPTIONS : ['By piping class / compatible', 'Flanged RF', 'Butt weld', 'Threaded NPT', 'Socket weld', 'User-defined']);
@@ -2069,7 +2069,7 @@ function renderSidebar(nodeId) {
         addRow('Head Loss Allowance', node.props.headLossAllowancePercent ?? 0, 'headLossAllowancePercent', false, '%', 'number');
 
         const flowForPipe = node.results && node.results.pressureCalculated ? parseFloat(node.results.flow) || 0 : 0;
-        const segmentResults = calculatePipeHydraulicSegments(flowForPipe, node.props);
+        const segmentResults = calculatePipeHydraulicSegments(flowForPipe, node.props, null, nodeId);
         const segmentResultByIndex = new Map(segmentResults.map(result => [result.index, result]));
         const segmentProfileByIndex = new Map((node.results?.segmentProfiles || []).map(profile => [profile.index, profile]));
         const totalHeadLoss = segmentResults.reduce((sum, result) => sum + result.totalLoss, 0);
@@ -2362,7 +2362,7 @@ function renderSidebar(nodeId) {
         traceTd.colSpan = 2;
         traceTd.className = 'pipe-trace-cell';
         const pipeTrace = typeof buildPipeCalculationTrace === 'function'
-            ? buildPipeCalculationTrace(flowForPipe, node.props, node.results)
+            ? buildPipeCalculationTrace(flowForPipe, node.props, node.results, null, nodeId)
             : null;
         const traceOpenAttribute = typeof window === 'undefined' || window.innerWidth >= 700 ? 'open' : '';
         traceTd.innerHTML = `
@@ -2377,10 +2377,10 @@ function renderSidebar(nodeId) {
         tbody.appendChild(traceTr);
 
         const refreshPipeSegmentReadouts = () => {
-            normalizePipeProps(node.props);
+            normalizePipeProps(node.props, nodeId);
             updateSimulation({ renderSidebarAfter: false });
             const updatedFlow = node.results && node.results.pressureCalculated ? parseFloat(node.results.flow) || 0 : 0;
-            const updatedDetails = new Map(calculatePipeHydraulicSegments(updatedFlow, node.props).map(result => [result.index, result]));
+            const updatedDetails = new Map(calculatePipeHydraulicSegments(updatedFlow, node.props, null, nodeId).map(result => [result.index, result]));
             const updatedProfiles = new Map((node.results?.segmentProfiles || []).map(profile => [profile.index, profile]));
             const updatedHeadLoss = [...updatedDetails.values()].reduce((sum, result) => sum + result.totalLoss, 0);
             const updatedMajorLoss = [...updatedDetails.values()].reduce((sum, result) => sum + result.majorLoss, 0);
@@ -2416,7 +2416,7 @@ function renderSidebar(nodeId) {
             setSidebarReadout('pipe-warnings', updatedWarnings.join(' | ') || 'OK', '');
             const traceBody = traceTr.querySelector('[data-key="pipe-calculation-trace-body"]');
             if (traceBody && typeof buildPipeCalculationTrace === 'function') {
-                traceBody.innerHTML = renderPipeCalculationTraceReport(buildPipeCalculationTrace(updatedFlow, node.props, node.results));
+                traceBody.innerHTML = renderPipeCalculationTraceReport(buildPipeCalculationTrace(updatedFlow, node.props, node.results, null, nodeId));
             }
 
             segTd.querySelectorAll('#pipeSegmentTable tbody tr').forEach((row, idx) => {
@@ -2489,7 +2489,10 @@ function renderSidebar(nodeId) {
                     return;
                 }
 
-                if (field === 'roughnessMm') {
+                if (field === 'name') {
+                    segment.name = e.target.value;
+                    segment.nameUserEdited = !!String(e.target.value || '').trim();
+                } else if (field === 'roughnessMm') {
                     segment.roughness = Math.max(0, internalPipeValue(e.target.value, 'roughness') || 0);
                     if (segment.material !== 'Custom roughness') segment.material = 'Custom roughness';
                 } else if (field === 'fittingK') {
@@ -2546,7 +2549,7 @@ function renderSidebar(nodeId) {
                         segment.fittingQuantity = 1;
                     }
                     syncSegmentFittingKForAdditionalK(segment);
-                    normalizePipeProps(node.props);
+                    normalizePipeProps(node.props, nodeId);
                     updateSimulation({ renderSidebarAfter: false });
                     renderSidebar(nodeId);
                     return;
@@ -2570,8 +2573,12 @@ function renderSidebar(nodeId) {
         
         segTd.querySelector('.btn-add-segment').addEventListener('click', () => {
             captureState();
+            const nextIndex = node.props.segments.length;
             node.props.segments.push({
-                name: "New Seg",
+                name: typeof getPipeSegmentAutoName === 'function'
+                    ? getPipeSegmentAutoName(nodeId, nextIndex)
+                    : `${nodeId}-Seg-${nextIndex + 1}`,
+                nameUserEdited: false,
                 pipeSize: "Custom diameter",
                 material: "Commercial steel",
                 diameter: 0.1,
@@ -2586,7 +2593,7 @@ function renderSidebar(nodeId) {
                 highPointElevation: '',
                 highPointLocationPercent: 50
             });
-            normalizePipeProps(node.props);
+            normalizePipeProps(node.props, nodeId);
             updateSimulation({ renderSidebarAfter: false });
             renderSidebar(nodeId);
         });
@@ -2596,7 +2603,7 @@ function renderSidebar(nodeId) {
                 const idx = parseInt(e.target.dataset.idx);
                 captureState();
                 node.props.segments.splice(idx, 1);
-                normalizePipeProps(node.props);
+                normalizePipeProps(node.props, nodeId);
                 updateSimulation({ renderSidebarAfter: false });
                 renderSidebar(nodeId);
             });
@@ -2659,8 +2666,19 @@ async function initializeChart() {
         options: {
             responsive: true, maintainAspectRatio: false,
             scales: {
-                x: { title: { display: true, text: 'Flow Rate (m3/h)' }, grid: { color: '#f0f0f0'} },
-                y: { title: { display: true, text: 'Head (m)' }, min: 0, grid: { color: '#f0f0f0'} }
+                x: {
+                    type: 'linear',
+                    title: { display: true, text: 'Flow Rate (m3/h)' },
+                    beginAtZero: true,
+                    grid: { color: '#f0f0f0' },
+                    ticks: { maxTicksLimit: 10 }
+                },
+                y: {
+                    title: { display: true, text: 'Head (m)' },
+                    beginAtZero: true,
+                    grid: { color: '#f0f0f0' },
+                    ticks: { maxTicksLimit: 8 }
+                }
             }
         }
     });
