@@ -6,6 +6,7 @@ const indexHtml = fs.readFileSync(path.join(projectRoot, 'index.html'), 'utf8');
 const appJs = fs.readFileSync(path.join(projectRoot, 'app.js'), 'utf8');
 const sidebarProperties = fs.readFileSync(path.join(projectRoot, 'ui/sidebar-properties.js'), 'utf8');
 const canvasManager = fs.readFileSync(path.join(projectRoot, 'ui/canvas-manager.js'), 'utf8');
+const taskWindow = fs.readFileSync(path.join(projectRoot, 'ui/task-window.js'), 'utf8');
 const styles = fs.readFileSync(path.join(projectRoot, 'style.css'), 'utf8');
 const minifiedStylesPath = path.join(projectRoot, 'style.min.css');
 const minifiedBundlePath = path.join(projectRoot, 'app.bundle.min.js');
@@ -30,6 +31,9 @@ assert(indexHtml.includes('class="academic-logo" src="png/untirta-75.webp" width
 assert(indexHtml.includes('class="solve-mobile-logo" src="png/untirta-75.webp" width="28" height="28"'), 'Mobile Solve logo should reserve image dimensions');
 assert(indexHtml.includes('class="task-window task-window-fluid-active"'), 'Initial Fluid Basis window should be available in static HTML for faster LCP');
 assert(indexHtml.includes('Set Fluid Basis and Unit Standard before adding equipment.'), 'LCP Fluid Basis setup notice should not wait for JavaScript rendering');
+assert(indexHtml.includes('<body class="fluid-basis-task-open">'), 'Initial Fluid Basis prompt should use its final responsive task-window layout before CSS hydration');
+assert(indexHtml.includes('data-fluid-action="open-full-basis"'), 'Initial Fluid Basis prompt should defer full setup rendering until user action');
+assert(indexHtml.includes('.fluid-basis-apply-bar{display:flex'), 'Critical CSS should style the startup Fluid Basis action bar before async CSS arrives');
 assert(indexHtml.includes('<style>') && indexHtml.includes('.main-workspace{display:flex;flex:1'), 'Critical above-the-fold layout CSS should be inlined to stabilize first paint');
 assert(indexHtml.includes('.full-editor-modal{display:none}'), 'Critical CSS should hide the pump chart modal before the async stylesheet loads');
 assert(indexHtml.includes('<link rel="preload" href="style.min.css" as="style">'), 'Production page should preload the full stylesheet without making it render-blocking');
@@ -52,7 +56,9 @@ assert(Array.isArray(sourceMap.sources) && sourceMap.sources.length >= 30, 'Appl
 assert(Array.isArray(sourceMap.sourcesContent) && sourceMap.sourcesContent.length === sourceMap.sources.length, 'Application bundle source map should include source contents for production debugging');
 assert(typeof sourceMap.mappings === 'string' && sourceMap.mappings.length > 0, 'Application bundle source map should include generated mappings');
 assert(appJs.includes('basisConfirmedAtStartup'), 'Startup should decide initial Fluid Basis visibility before non-critical work');
+assert(appJs.includes('activateInitialFluidBasisPrompt'), 'Startup should activate the static Fluid Basis prompt without replacing it before first paint');
 assert(appJs.includes('requestAnimationFrame(() => window.setTimeout(() => {'), 'Non-critical startup work should be deferred until after first paint');
+assert(taskWindow.includes('function activateInitialFluidBasisPrompt'), 'Task window should support CLS-safe activation of the static Fluid Basis prompt');
 
 console.log(JSON.stringify({
     passed: true,

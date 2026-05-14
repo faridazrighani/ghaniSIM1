@@ -470,6 +470,44 @@ function openTaskWindow(title, content, options = {}) {
     }
 }
 
+function openFluidBasisFullSetupFromPrompt(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    openFluidBasisTaskWindow({ reason: fluidBasisSetupPrompt });
+}
+
+function activateInitialFluidBasisPrompt(options = {}) {
+    const taskWindow = document.getElementById('taskWindow');
+    const taskTitle = document.getElementById('taskWindowTitle');
+    const taskBody = document.getElementById('taskWindowBody');
+    if (!taskWindow || !taskTitle || !taskBody) return false;
+
+    initTaskWindow();
+    hideTaskWindowLauncher();
+    fluidBasisSetupPrompt = options.reason || null;
+    taskTitle.textContent = 'Fluid Basis';
+    taskWindow.hidden = false;
+    taskWindow.dataset.kind = 'fluid';
+    delete taskWindow.dataset.nodeId;
+    taskWindow.classList.add('task-window-fluid-active');
+    taskWindow.classList.remove('task-window-pipe-active', 'task-window-tank-active', 'task-window-object-active', 'task-window-minimized');
+    taskWindow.setAttribute('aria-expanded', 'true');
+    taskBody.className = 'task-window-body fluid-basis-task-body';
+    document.body.classList.add('fluid-basis-task-open');
+    updateTaskWindowMinimizeButton();
+
+    const noticeText = taskBody.querySelector('[data-fluid-lcp-reason]');
+    if (noticeText && fluidBasisSetupPrompt) {
+        noticeText.textContent = fluidBasisSetupPrompt;
+    }
+    const openButton = taskBody.querySelector('[data-fluid-action="open-full-basis"]');
+    if (openButton && openButton.dataset.bound !== 'true') {
+        openButton.addEventListener('click', openFluidBasisFullSetupFromPrompt);
+        openButton.dataset.bound = 'true';
+    }
+    return true;
+}
+
 function closeTaskWindow(options = {}) {
     const taskWindow = document.getElementById('taskWindow');
     let dismissedPipeId = null;
@@ -495,7 +533,7 @@ function closeTaskWindow(options = {}) {
         delete taskWindow.dataset.nodeId;
         updateTaskWindowMinimizeButton();
     }
-    document.body.classList.remove('pipe-properties-task-open', 'tank-properties-task-open', 'object-properties-task-open');
+    document.body.classList.remove('fluid-basis-task-open', 'pipe-properties-task-open', 'tank-properties-task-open', 'object-properties-task-open');
     pipePropertiesTaskNodeId = null;
     tankPropertiesTaskNodeId = null;
     objectPropertiesTaskNodeId = null;
@@ -1355,6 +1393,10 @@ function handleFluidTaskInput(e) {
 function handleFluidTaskAction(e) {
     const actionTarget = e.target.closest('[data-fluid-action]');
     if (!actionTarget) return;
+    if (actionTarget.dataset.fluidAction === 'open-full-basis') {
+        openFluidBasisFullSetupFromPrompt(e);
+        return;
+    }
     if (actionTarget.dataset.fluidAction === 'confirm-basis') {
         e.preventDefault();
         if (typeof confirmBasisSetup === 'function') confirmBasisSetup();

@@ -148,11 +148,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const basisConfirmedAtStartup = typeof isBasisConfirmed === 'function' && isBasisConfirmed();
-    if (!basisConfirmedAtStartup && typeof openFluidBasisTaskWindow === 'function') {
-        openFluidBasisTaskWindow({
-            setupRequired: true,
-            reason: 'Set Fluid Basis and Unit Standard before adding equipment.'
-        });
+    if (!basisConfirmedAtStartup) {
+        const reason = 'Set Fluid Basis and Unit Standard before adding equipment.';
+        if (typeof activateInitialFluidBasisPrompt === 'function') {
+            activateInitialFluidBasisPrompt({ setupRequired: true, reason });
+        } else if (typeof openFluidBasisTaskWindow === 'function') {
+            openFluidBasisTaskWindow({ setupRequired: true, reason });
+        }
+    } else if (typeof closeFluidBasisTaskWindow === 'function') {
+        closeFluidBasisTaskWindow();
     }
 
     // Defer non-critical startup work so the initial Fluid Basis notice can paint first.
