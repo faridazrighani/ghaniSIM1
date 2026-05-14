@@ -2362,6 +2362,31 @@ select.prop-input-field {
     max-width: 100%;
 }
 
+.fluid-basis-lcp-shell {
+    gap: 0;
+    min-height: 142px;
+    contain: layout paint;
+}
+
+.fluid-basis-lcp-shell .fluid-basis-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+}
+
+.fluid-basis-lcp-shell .fluid-input-card {
+    min-height: 138px;
+}
+
+.fluid-basis-lcp-shell [data-fluid-lcp-reason] {
+    display: block;
+    min-height: 17px;
+}
+
+.fluid-basis-lcp-action span {
+    min-width: 0;
+    line-height: 1.25;
+}
+
 .fluid-basis-grid {
     display: grid;
     grid-template-columns: minmax(300px, 0.92fr) minmax(340px, 1.08fr);

@@ -30,10 +30,12 @@ assert(styles.includes('min-height: 59px;'), 'Toolbar palette should reserve ico
 assert(indexHtml.includes('class="academic-logo" src="png/untirta-75.webp" width="56" height="56"'), 'Academic logo should reserve image dimensions');
 assert(indexHtml.includes('class="solve-mobile-logo" src="png/untirta-75.webp" width="28" height="28"'), 'Mobile Solve logo should reserve image dimensions');
 assert(indexHtml.includes('class="task-window task-window-fluid-active"'), 'Initial Fluid Basis window should be available in static HTML for faster LCP');
+assert(indexHtml.indexOf('id="taskWindow"') < indexHtml.indexOf('<!-- Top Menu Bar -->'), 'Initial Fluid Basis LCP shell should appear before heavier toolbar markup in the HTML stream');
 assert(indexHtml.includes('Set Fluid Basis and Unit Standard before adding equipment.'), 'LCP Fluid Basis setup notice should not wait for JavaScript rendering');
 assert(indexHtml.includes('<body class="fluid-basis-task-open">'), 'Initial Fluid Basis prompt should use its final responsive task-window layout before CSS hydration');
 assert(indexHtml.includes('data-fluid-action="open-full-basis"'), 'Initial Fluid Basis prompt should defer full setup rendering until user action');
 assert(indexHtml.includes('.fluid-basis-apply-bar{display:flex'), 'Critical CSS should style the startup Fluid Basis action bar before async CSS arrives');
+assert(indexHtml.includes('.fluid-basis-lcp-shell{gap:0;min-height:142px;contain:layout paint}'), 'Critical CSS should reserve stable dimensions for the startup Fluid Basis LCP shell');
 assert(indexHtml.includes('<style>') && indexHtml.includes('.main-workspace{display:flex;flex:1'), 'Critical above-the-fold layout CSS should be inlined to stabilize first paint');
 assert(indexHtml.includes('.full-editor-modal{display:none}'), 'Critical CSS should hide the pump chart modal before the async stylesheet loads');
 assert(indexHtml.includes('<link rel="preload" href="style.min.css" as="style">'), 'Production page should preload the full stylesheet without making it render-blocking');
